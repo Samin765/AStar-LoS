@@ -18,13 +18,13 @@ namespace UnityStandardAssets.Vehicles.Car
         private List<Vector3> obstacleMap;
         public class Node
         {
-            public Vector3 worldPosition;
+            public Vector2 worldPosition;
             public Node parent;
             public int gCost;
             public int hCost;
             public int fCost { get { return gCost + hCost; } }
 
-            public Node(Vector3 _worldPos, Vector3 _targetPos, Vector3 _startPos)
+            public Node(Vector2 _worldPos, Vector2 _targetPos, Vector2 _startPos)
             {
                 
                 worldPosition = _worldPos;
@@ -32,7 +32,7 @@ namespace UnityStandardAssets.Vehicles.Car
                 hCost = GetDistance(_worldPos, _targetPos);
             }
 
-            public Node(Vector3 _worldPos)
+            public Node(Vector2 _worldPos)
             {
                 
                 worldPosition = _worldPos;
@@ -41,7 +41,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
             
         }
-        private List<Vector3> FindPath(Vector3 startWorldPos, Vector3 targetWorldPos)
+        private List<Vector3> FindPath(Vector2 startWorldPos, Vector2 targetWorldPos)
         {
             Node startNode = new Node(startWorldPos, startWorldPos, targetWorldPos);
             Node targetNode = new Node(targetWorldPos, startWorldPos, targetWorldPos);
@@ -57,7 +57,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
             openSet.Add(startNode);
             var j = 0;
-            while (openSet.Count > 0 && j < 10000)
+            while (openSet.Count > 0)
             {
                 Node currentNode = openSet[0];
 
@@ -125,31 +125,45 @@ namespace UnityStandardAssets.Vehicles.Car
             path.Reverse();
             return path;
         }
-        private static int GetDistance(Vector3 worldPoisitionA, Vector3 worldPositionB)
+        private static int GetDistance(Vector2 worldPoisitionA, Vector2 worldPositionB)
         {
             int distX = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.x - worldPositionB.x));
-            int distZ = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.z - worldPositionB.z));
-            if (distX > distZ)
-                return 14 * distZ + 10 * (distX - distZ);
-            return 14 * distX + 10 * (distZ - distX);
+            int distY = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.y - worldPositionB.y));
+            if (distX > distY)
+                return 14 * distY + 10 * (distX - distY);
+            return 14 * distX + 10 * (distY - distX);
             //return Mathf.RoundToInt(Vector3.Distance(worldPoisitionA, worldPositionB));
         }
-        private List<Node> GetNeighbours(Node node, Vector3 startPos, Vector3 targetPos)
+        private List<Node> GetNeighbours(Node node, Vector2 startPos, Vector2 targetPos)
         {
             List<Node> neighbours = new List<Node>();
-
+            var obstacleMap = mapManager.GetObstacleMap();
+            Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
             for (int x = -1; x <= 1; x++)
             {
-                for (int z = -1; z <= 1; z++)
+                for (int y = -1; y <= 1; y++)
                 {
-                    if (x == 0 && z == 0)
+                    if (x == 0 && y == 0)
                         continue;
 
-                    Vector3 worldPoint = node.worldPosition + new Vector3(x, 0, z);
-                    var obstacleMap = mapManager.GetObstacleMap();
-                    if (obstacleMap.IsLocalPointTraversable(worldPoint) == ObstacleMap.Traversability.Free)
+
+                    var worldPoint = node.worldPosition + new Vector2(x, y);
+                    Vector2Int vector2Int = new Vector2Int(Mathf.RoundToInt(worldPoint.x), Mathf.RoundToInt(worldPoint.y));
+
+
+
+                    if (mapData.ContainsKey(vector2Int))
                     {
-                        neighbours.Add(new Node(worldPoint, startPos, targetPos ));
+                        ObstacleMap.Traversability traversability = mapData[vector2Int];
+
+                        if (traversability == ObstacleMap.Traversability.Free)
+                        {
+                            Debug.Log("Added Neighbour");
+                            neighbours.Add(new Node(worldPoint, startPos, targetPos ));
+                        }
+
+
+
                     }
 
 
@@ -192,19 +206,19 @@ namespace UnityStandardAssets.Vehicles.Car
             // Replace the code below that makes a random path
             // ...
 
-            Vector3 start_pos = mapManager.localStartPosition;
             Vector3 goal_pos = mapManager.localGoalPosition;
 
             //Debug.Log(start_pos);
+            Vector3 start_pos = mapManager.localStartPosition;
 
             var grid_start_pos = obstacleMap.grid.LocalToCell(start_pos);
             var grid_goal_pos =  obstacleMap.grid.LocalToCell(goal_pos);
-
-
+            
+            Debug.Log(grid_start_pos);
             List<Vector3> my_path = new List<Vector3>();
 
             my_path = FindPath(start_pos, goal_pos);
-            Debug.Log(my_path);
+            //Debug.Log(my_path);
             // Plot your path to see if it makes sense
             // Note that path can only be seen in "Scene" window, not "Game" window
             Vector3 old_wp = start_pos;
@@ -220,11 +234,16 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private void FixedUpdate()
         {
+            var obstacleMap = mapManager.GetObstacleMap();
+
             Vector3 start_pos = mapManager.localStartPosition;
             Vector3 currentGridPosition = mapManager.grid.WorldToLocal(transform.position);
             //Vector3 world_pos = mapManager.worldStartPosition;
 
+            Vector3 currentt_pos = mapManager.grid.WorldToLocal(transform.position);
 
+            var grid_start_pos = obstacleMap.grid.LocalToCell(currentt_pos);
+            //Debug.Log(currentt_pos);
             // How to calculate if a physics collider overlaps another.
             //Debug.Log(start_pos);
             //Debug.Log(currentGridPosition);
@@ -267,7 +286,6 @@ namespace UnityStandardAssets.Vehicles.Car
 
             // Check and print traversability of currect position
             Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position); // Position of car w.r.p map coordinate origin (not world global)
-            var obstacleMap = mapManager.GetObstacleMap();
             //(obstacleMap.IsLocalPointTraversable(myLocalPosition));
 
             // Execute your path here
