@@ -13,6 +13,7 @@ namespace UnityStandardAssets.Vehicles.Car
         private CarController m_Car; // the car controller we want to use
         private MapManager mapManager;
         private BoxCollider carCollider;
+        
         private List<Vector3> path;
         private List<Vector3> obstacleMap;
         public class Node
@@ -45,13 +46,28 @@ namespace UnityStandardAssets.Vehicles.Car
             Node startNode = new Node(startWorldPos, startWorldPos, targetWorldPos);
             Node targetNode = new Node(targetWorldPos, startWorldPos, targetWorldPos);
 
+            if (targetNode == null || startNode == null) {
+                Debug.Log("Start/Target = Null");
+                return new List<Vector3>();
+            }
+
+
             List<Node> openSet = new List<Node>();
             HashSet<Node> closedSet = new HashSet<Node>();
-            openSet.Add(startNode);
 
-            while (false)
+            openSet.Add(startNode);
+            var j = 0;
+            while (openSet.Count > 0 && j < 10000)
             {
                 Node currentNode = openSet[0];
+
+                if (currentNode == null){
+                    Debug.Log("CurrentNode == null!");
+                    return new List<Vector3>();
+                }
+
+
+
                 for (int i = 1; i < openSet.Count; i++)
                 {
                     if (openSet[i].fCost < currentNode.fCost || (openSet[i].fCost == currentNode.fCost && openSet[i].hCost < currentNode.hCost))
@@ -65,18 +81,21 @@ namespace UnityStandardAssets.Vehicles.Car
 
                 if (currentNode.worldPosition == targetNode.worldPosition)
                 {
+                    Debug.Log("Target Reached!");
                     return RetracePath(startNode, targetNode);
                 }
 
                 foreach (Node neighbour in GetNeighbours(currentNode, startWorldPos, targetWorldPos))
                 {
-                    if (closedSet.Contains(neighbour))
+                    var obstacleMap = mapManager.GetObstacleMap();
+
+                    if (closedSet.Contains(neighbour) || !(obstacleMap.IsLocalPointTraversable(neighbour.worldPosition) == ObstacleMap.Traversability.Free))
                     {
                         continue;
                     }
 
                     int newCostToNeighbour = currentNode.gCost + GetDistance(currentNode.worldPosition, neighbour.worldPosition);
-                    if (newCostToNeighbour < neighbour.gCost || !openSet.Contains(neighbour))
+                    if (newCostToNeighbour < neighbour.gCost || !(openSet.Contains(neighbour)))
                     {
                         neighbour.gCost = newCostToNeighbour;
                         neighbour.hCost = GetDistance(neighbour.worldPosition, targetNode.worldPosition);
@@ -86,8 +105,10 @@ namespace UnityStandardAssets.Vehicles.Car
                             openSet.Add(neighbour);
                     }
                 }
-            }
 
+                j = j + 1;
+            }
+            Debug.Log("Did not reach target!");
             return new List<Vector3>();
         }
 
@@ -106,11 +127,12 @@ namespace UnityStandardAssets.Vehicles.Car
         }
         private static int GetDistance(Vector3 worldPoisitionA, Vector3 worldPositionB)
         {
-            int distX = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.x - worldPoisitionA.x));
-            int distZ = Mathf.Abs(Mathf.RoundToInt(worldPositionB.z - worldPositionB.z));
+            int distX = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.x - worldPositionB.x));
+            int distZ = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.z - worldPositionB.z));
             if (distX > distZ)
                 return 14 * distZ + 10 * (distX - distZ);
             return 14 * distX + 10 * (distZ - distX);
+            //return Mathf.RoundToInt(Vector3.Distance(worldPoisitionA, worldPositionB));
         }
         private List<Node> GetNeighbours(Node node, Vector3 startPos, Vector3 targetPos)
         {
@@ -173,18 +195,23 @@ namespace UnityStandardAssets.Vehicles.Car
             Vector3 start_pos = mapManager.localStartPosition;
             Vector3 goal_pos = mapManager.localGoalPosition;
 
-            Debug.Log(start_pos);
+            //Debug.Log(start_pos);
+
+            var grid_start_pos = obstacleMap.grid.LocalToCell(start_pos);
+            var grid_goal_pos =  obstacleMap.grid.LocalToCell(goal_pos);
 
 
             List<Vector3> my_path = new List<Vector3>();
 
-            path = FindPath(start_pos, goal_pos);
-
+            my_path = FindPath(start_pos, goal_pos);
+            Debug.Log(my_path);
             // Plot your path to see if it makes sense
             // Note that path can only be seen in "Scene" window, not "Game" window
             Vector3 old_wp = start_pos;
             foreach (var wp in my_path)
             {
+                Debug.Log(wp);
+                Debug.Log("---");
                 Debug.DrawLine(mapManager.grid.LocalToWorld(old_wp), mapManager.grid.LocalToWorld(wp), Color.white, 1000f);
                 old_wp = wp;
             }
@@ -199,8 +226,8 @@ namespace UnityStandardAssets.Vehicles.Car
 
 
             // How to calculate if a physics collider overlaps another.
-            Debug.Log(start_pos);
-            Debug.Log(currentGridPosition);
+            //Debug.Log(start_pos);
+            //Debug.Log(currentGridPosition);
 
             var exampleObstacle = mapManager.GetObstacleMap().obstacleObjects[0];
 
@@ -241,18 +268,19 @@ namespace UnityStandardAssets.Vehicles.Car
             // Check and print traversability of currect position
             Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position); // Position of car w.r.p map coordinate origin (not world global)
             var obstacleMap = mapManager.GetObstacleMap();
-            Debug.Log(obstacleMap.IsLocalPointTraversable(myLocalPosition));
+            //(obstacleMap.IsLocalPointTraversable(myLocalPosition));
 
             // Execute your path here
             // ...
 
             // this is how you control the car
-            //m_Car.Move(0f, 1f, 1f, 0f);
-            FollowPath();
+            m_Car.Move(0f, 1f, 1f, 0f);
+            //FollowPath();
         }
 
         private void FollowPath()
         {
+            //Debug.Log(path)
             if (path != null && path.Count > 0)
             {
                 Vector3 nextPoint = path[0];
