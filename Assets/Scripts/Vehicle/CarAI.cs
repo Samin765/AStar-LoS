@@ -108,7 +108,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
                 j = j + 1;
             }
-            Debug.Log("Did not reach target!");
+            Debug.Log("Did not reach target (end of function)!");
             return new List<Vector3>();
         }
 
@@ -150,10 +150,14 @@ namespace UnityStandardAssets.Vehicles.Car
                     var worldPoint = node.worldPosition + new Vector2(x, y);
                     Vector2Int vector2Int = new Vector2Int(Mathf.RoundToInt(worldPoint.x), Mathf.RoundToInt(worldPoint.y));
 
+                    Debug.Log("checking Neighbour");
+                    Debug.Log(vector2Int);
 
 
                     if (mapData.ContainsKey(vector2Int))
                     {
+                        Debug.Log("GridPosition Valid");
+
                         ObstacleMap.Traversability traversability = mapData[vector2Int];
 
                         if (traversability == ObstacleMap.Traversability.Free)
