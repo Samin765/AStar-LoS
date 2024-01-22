@@ -18,13 +18,13 @@ namespace UnityStandardAssets.Vehicles.Car
         private List<Vector3> obstacleMap;
         public class Node
         {
-            public Vector2 worldPosition;
+            public Vector2Int worldPosition;
             public Node parent;
             public int gCost;
             public int hCost;
             public int fCost { get { return gCost + hCost; } }
 
-            public Node(Vector2 _worldPos, Vector2 _targetPos, Vector2 _startPos)
+            public Node(Vector2Int _worldPos, Vector2Int _targetPos, Vector2Int _startPos)
             {
                 
                 worldPosition = _worldPos;
@@ -32,7 +32,7 @@ namespace UnityStandardAssets.Vehicles.Car
                 hCost = GetDistance(_worldPos, _targetPos);
             }
 
-            public Node(Vector2 _worldPos)
+            public Node(Vector2Int _worldPos)
             {
                 
                 worldPosition = _worldPos;
@@ -41,8 +41,10 @@ namespace UnityStandardAssets.Vehicles.Car
 
             
         }
-        private List<Vector3> FindPath(Vector2 startWorldPos, Vector2 targetWorldPos)
+        private List<Vector3> FindPath(Vector2Int startWorldPos, Vector2Int targetWorldPos)
         {
+            Debug.Log(startWorldPos);
+            Debug.Log(targetWorldPos);
             Node startNode = new Node(startWorldPos, startWorldPos, targetWorldPos);
             Node targetNode = new Node(targetWorldPos, startWorldPos, targetWorldPos);
 
@@ -57,7 +59,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
             openSet.Add(startNode);
             var j = 0;
-            while (openSet.Count > 0)
+            while (openSet.Count > 0 && j <10000)
             {
                 Node currentNode = openSet[0];
 
@@ -84,12 +86,13 @@ namespace UnityStandardAssets.Vehicles.Car
                     Debug.Log("Target Reached!");
                     return RetracePath(startNode, targetNode);
                 }
-
+                var obstacleMap = mapManager.GetObstacleMap();
+                Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
                 foreach (Node neighbour in GetNeighbours(currentNode, startWorldPos, targetWorldPos))
                 {
-                    var obstacleMap = mapManager.GetObstacleMap();
+                    ObstacleMap.Traversability traversability = mapData[neighbour.worldPosition];
 
-                    if (closedSet.Contains(neighbour) || !(obstacleMap.IsLocalPointTraversable(neighbour.worldPosition) == ObstacleMap.Traversability.Free))
+                    if (closedSet.Contains(neighbour) || !(traversability == ObstacleMap.Traversability.Free))
                     {
                         continue;
                     }
@@ -114,18 +117,25 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private List<Vector3> RetracePath(Node startNode, Node endNode)
         {
+            ObstacleMap obstacleMap = mapManager.GetObstacleMap();
+
             List<Vector3> path = new List<Vector3>();
             Node currentNode = endNode;
 
             while (currentNode != startNode)
             {
-                path.Add(currentNode.worldPosition);
+                Vector2Int gridPosition = currentNode.worldPosition;
+
+                Vector3 localPosition = obstacleMap.grid.LocalToWorld(obstacleMap.grid.CellToLocalInterpolated(new Vector3Int(gridPosition.x, 0, gridPosition.y)));
+                Vector3 worldPosition = mapManager.grid.LocalToWorld(localPosition);
+
+                path.Add(worldPosition);
                 currentNode = currentNode.parent;
             }
             path.Reverse();
             return path;
         }
-        private static int GetDistance(Vector2 worldPoisitionA, Vector2 worldPositionB)
+        private static int GetDistance(Vector2Int worldPoisitionA, Vector2Int worldPositionB)
         {
             int distX = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.x - worldPositionB.x));
             int distY = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.y - worldPositionB.y));
@@ -134,11 +144,15 @@ namespace UnityStandardAssets.Vehicles.Car
             return 14 * distX + 10 * (distY - distX);
             //return Mathf.RoundToInt(Vector3.Distance(worldPoisitionA, worldPositionB));
         }
-        private List<Node> GetNeighbours(Node node, Vector2 startPos, Vector2 targetPos)
+        private List<Node> GetNeighbours(Node node, Vector2Int startPos, Vector2Int targetPos)
         {
             List<Node> neighbours = new List<Node>();
             var obstacleMap = mapManager.GetObstacleMap();
             Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
+            foreach (Vector2Int key in mapData.Keys)
+            {
+            //Debug.Log(key.ToString());
+            }
             for (int x = -1; x <= 1; x++)
             {
                 for (int y = -1; y <= 1; y++)
@@ -147,11 +161,11 @@ namespace UnityStandardAssets.Vehicles.Car
                         continue;
 
 
-                    var worldPoint = node.worldPosition + new Vector2(x, y);
+                    var worldPoint = node.worldPosition + new Vector2Int(x, y);
                     Vector2Int vector2Int = new Vector2Int(Mathf.RoundToInt(worldPoint.x), Mathf.RoundToInt(worldPoint.y));
 
-                    Debug.Log("checking Neighbour");
-                    Debug.Log(vector2Int);
+                    //Debug.Log("checking Neighbour");
+                    //Debug.Log(vector2Int);
 
 
                     if (mapData.ContainsKey(vector2Int))
@@ -163,7 +177,7 @@ namespace UnityStandardAssets.Vehicles.Car
                         if (traversability == ObstacleMap.Traversability.Free)
                         {
                             Debug.Log("Added Neighbour");
-                            neighbours.Add(new Node(worldPoint, startPos, targetPos ));
+                            neighbours.Add(new Node(vector2Int, startPos, targetPos ));
                         }
 
 
@@ -204,6 +218,10 @@ namespace UnityStandardAssets.Vehicles.Car
             {
                 Vector2Int gridPos = new Vector2Int(posThreeDim.x, posThreeDim.z);
             }
+
+
+            
+            
             // If you need more details, feel free to check out the ObstacleMap class internals.
 
 
@@ -218,10 +236,18 @@ namespace UnityStandardAssets.Vehicles.Car
             var grid_start_pos = obstacleMap.grid.LocalToCell(start_pos);
             var grid_goal_pos =  obstacleMap.grid.LocalToCell(goal_pos);
             
-            Debug.Log(grid_start_pos);
+            //Debug.Log(grid_start_pos);
             List<Vector3> my_path = new List<Vector3>();
 
-            my_path = FindPath(start_pos, goal_pos);
+
+            // DU ÄNDRADE ALLT TILL VECTOR2INT, NÄR DU ÄNDRADE DET SÅ BLEV FOR LOOPEN INFINITE ELR NÅT
+
+            
+            Vector2Int start_vector2Int = new Vector2Int(Mathf.FloorToInt(grid_start_pos.x), Mathf.FloorToInt(grid_start_pos.y));
+            Vector2Int goal_vector2Int = new Vector2Int(Mathf.FloorToInt(grid_goal_pos.x), Mathf.FloorToInt(grid_goal_pos.y));
+
+            Debug.Log(start_vector2Int);
+            my_path = FindPath(start_vector2Int, goal_vector2Int);
             //Debug.Log(my_path);
             // Plot your path to see if it makes sense
             // Note that path can only be seen in "Scene" window, not "Game" window
@@ -247,7 +273,7 @@ namespace UnityStandardAssets.Vehicles.Car
             Vector3 currentt_pos = mapManager.grid.WorldToLocal(transform.position);
 
             var grid_start_pos = obstacleMap.grid.LocalToCell(currentt_pos);
-            //Debug.Log(currentt_pos);
+            //Debug.Log(grid_start_pos);
             // How to calculate if a physics collider overlaps another.
             //Debug.Log(start_pos);
             //Debug.Log(currentGridPosition);
