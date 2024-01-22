@@ -24,7 +24,7 @@ namespace UnityStandardAssets.Vehicles.Car
             public int hCost;
             public int fCost { get { return gCost + hCost; } }
 
-            public Node(Vector2Int _worldPos, Vector2Int _targetPos, Vector2Int _startPos)
+            public Node(Vector2Int _worldPos, Vector2Int _startPos, Vector2Int _targetPos)
             {
                 
                 worldPosition = _worldPos;
@@ -32,37 +32,37 @@ namespace UnityStandardAssets.Vehicles.Car
                 hCost = GetDistance(_worldPos, _targetPos);
             }
 
-            public Node(Vector2Int _worldPos)
-            {
-                
-                worldPosition = _worldPos;
-                
-            }
 
             
         }
         private List<Vector3> FindPath(Vector2Int startWorldPos, Vector2Int targetWorldPos)
         {
+            // NOTES: We are creating new Nodes in "Neighbour" and we are using these new Node Objects in the open/closed sets. When we try to use equal we are doing object reference. 
+            //        so even if Nodes have same worldPoint they will be treated as different Nodes whhich in turn makes use pick the same Node multiple times thus a infinite loop. 
+            // Neighbour added into OpenSet can be a Node we have already traversed. The algorithm wrongly chooses the node, it does not take the node with the lowest hCost when multiple nodes have same fCost
             Debug.Log(startWorldPos);
             Debug.Log(targetWorldPos);
             Node startNode = new Node(startWorldPos, startWorldPos, targetWorldPos);
             Node targetNode = new Node(targetWorldPos, startWorldPos, targetWorldPos);
-
+            Debug.Log(startNode.hCost);
+            Debug.Log(targetNode.hCost);
             if (targetNode == null || startNode == null) {
                 Debug.Log("Start/Target = Null");
                 return new List<Vector3>();
             }
 
-
+            
             List<Node> openSet = new List<Node>();
             HashSet<Node> closedSet = new HashSet<Node>();
-
+            var obstacleMap = mapManager.GetObstacleMap();
+            Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
             openSet.Add(startNode);
+
             var j = 0;
-            while (openSet.Count > 0 && j <10000)
+            while (openSet.Count > 0 && j < 4)
             {
                 Node currentNode = openSet[0];
-
+                Debug.Log("Current Node in OpenSet: " + currentNode.worldPosition);
                 if (currentNode == null){
                     Debug.Log("CurrentNode == null!");
                     return new List<Vector3>();
@@ -72,7 +72,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
                 for (int i = 1; i < openSet.Count; i++)
                 {
-                    if (openSet[i].fCost < currentNode.fCost || (openSet[i].fCost == currentNode.fCost && openSet[i].hCost < currentNode.hCost))
+                    if ((openSet[i].fCost < currentNode.fCost || openSet[i].fCost == currentNode.fCost) && openSet[i].hCost < currentNode.hCost)
                     {
                         currentNode = openSet[i];
                     }
@@ -86,9 +86,12 @@ namespace UnityStandardAssets.Vehicles.Car
                     Debug.Log("Target Reached!");
                     return RetracePath(startNode, targetNode);
                 }
-                var obstacleMap = mapManager.GetObstacleMap();
-                Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
-                foreach (Node neighbour in GetNeighbours(currentNode, startWorldPos, targetWorldPos))
+
+
+                List<Node> neighbours = GetNeighbours(currentNode, startWorldPos, targetWorldPos);
+
+                Debug.Log("GetNeighbours Done!");
+                foreach (Node neighbour in neighbours)
                 {
                     ObstacleMap.Traversability traversability = mapData[neighbour.worldPosition];
 
@@ -98,7 +101,7 @@ namespace UnityStandardAssets.Vehicles.Car
                     }
 
                     int newCostToNeighbour = currentNode.gCost + GetDistance(currentNode.worldPosition, neighbour.worldPosition);
-                    if (newCostToNeighbour < neighbour.gCost || !(openSet.Contains(neighbour)))
+                    if (newCostToNeighbour < neighbour.gCost || !openSet.Contains(neighbour))
                     {
                         neighbour.gCost = newCostToNeighbour;
                         neighbour.hCost = GetDistance(neighbour.worldPosition, targetNode.worldPosition);
@@ -139,9 +142,11 @@ namespace UnityStandardAssets.Vehicles.Car
         {
             int distX = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.x - worldPositionB.x));
             int distY = Mathf.Abs(Mathf.RoundToInt(worldPoisitionA.y - worldPositionB.y));
-            if (distX > distY)
-                return 14 * distY + 10 * (distX - distY);
-            return 14 * distX + 10 * (distY - distX);
+            //if (distX > distY)
+            //    return 14 * distY + 10 * (distX - distY);
+            //return 14 * distX + 10 * (distY - distX);
+            return Mathf.Max(Mathf.Abs(worldPoisitionA.x - worldPositionB.x), Mathf.Abs(worldPoisitionA.y - worldPositionB.y));
+
             //return Mathf.RoundToInt(Vector3.Distance(worldPoisitionA, worldPositionB));
         }
         private List<Node> GetNeighbours(Node node, Vector2Int startPos, Vector2Int targetPos)
@@ -149,10 +154,10 @@ namespace UnityStandardAssets.Vehicles.Car
             List<Node> neighbours = new List<Node>();
             var obstacleMap = mapManager.GetObstacleMap();
             Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
-            foreach (Vector2Int key in mapData.Keys)
-            {
+            //foreach (Vector2Int key in mapData.Keys)
+            //{
             //Debug.Log(key.ToString());
-            }
+            //}
             for (int x = -1; x <= 1; x++)
             {
                 for (int y = -1; y <= 1; y++)
@@ -170,14 +175,15 @@ namespace UnityStandardAssets.Vehicles.Car
 
                     if (mapData.ContainsKey(vector2Int))
                     {
-                        Debug.Log("GridPosition Valid");
+                        //Debug.Log("GridPosition Valid");
 
                         ObstacleMap.Traversability traversability = mapData[vector2Int];
 
                         if (traversability == ObstacleMap.Traversability.Free)
                         {
-                            Debug.Log("Added Neighbour");
-                            neighbours.Add(new Node(vector2Int, startPos, targetPos ));
+                            Node nNode = new Node(vector2Int, startPos, targetPos );
+                            Debug.Log("Added " + vector2Int + " with fCost/hCost : " + nNode.fCost + "/" + nNode.hCost + " as Neighbour to " + node.worldPosition);
+                            neighbours.Add(nNode);
                         }
 
 
