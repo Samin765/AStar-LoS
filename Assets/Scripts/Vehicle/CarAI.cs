@@ -32,7 +32,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private int carSizey = 2;
 
-        private float k_p = 40f;
+        private float k_p = 45f;
 
         private float k_d = 2f;
        
@@ -593,58 +593,64 @@ namespace UnityStandardAssets.Vehicles.Car
             FollowPath();
         }
 
-        private void FollowPath()
+            private void FollowPath()
+    {
+        
+        Vector3 target_position;
+
+
+        Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
+        //y is 0
+        myLocalPosition.y = 0;
+        
+      
+        if (driveInCircle) // for the circle option
         {
-            
-            Vector3 target_position;
-
-
-            Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
-            //y is 0
-            myLocalPosition.y = 0;
-            
-          
-            if (driveInCircle) // for the circle option
-            {
-                alpha += Time.deltaTime * (circleSpeed / circleRadius);
-                target_position = circleCenter + circleRadius * new Vector3((float)Math.Sin(alpha), 0f, (float)Math.Cos(alpha));
-                target_velocity = circleSpeed * new Vector3((float)Math.Cos(alpha), 0f, -(float)Math.Sin(alpha));
-            }
-            else // if target is a game object
-            {
-                target_position = path[0];
-                target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
-            }
-
-            old_target_pos = target_position;
-
-            // a PD-controller to get desired acceleration from errors in position and velocity
-            Vector3 position_error = target_position - myLocalPosition;
-            Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
-            Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
-
-            float steering = Vector3.Dot(desired_acceleration, transform.right);
-            float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
-
-            Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
-            Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
-            Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
-            if (Vector3.Distance(myLocalPosition, target_position) < 1f)
-            {
-                path.RemoveAt(0);
-                this.path.RemoveAt(0);
-
-            }
-            if(my_rigidbody.velocity.sqrMagnitude ==0f)
-            {
-                path.RemoveAt(0);
-                this.path.RemoveAt(0);
-               
-            }
-
-            // this is how you control the car
-            Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
-            m_Car.Move(60*steering, acceleration, acceleration, 0f);
+            alpha += Time.deltaTime * (circleSpeed / circleRadius);
+            target_position = circleCenter + circleRadius * new Vector3((float)Math.Sin(alpha), 0f, (float)Math.Cos(alpha));
+            target_velocity = circleSpeed * new Vector3((float)Math.Cos(alpha), 0f, -(float)Math.Sin(alpha));
         }
+        else // if target is a game object
+        {
+            target_position = path[0];
+            target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
+        }
+
+        old_target_pos = target_position;
+
+        // a PD-controller to get desired acceleration from errors in position and velocity
+        Vector3 position_error = target_position - myLocalPosition;
+        Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
+        Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
+
+        float steering = Vector3.Dot(desired_acceleration, transform.right);
+        float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
+
+        Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
+        Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
+        Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
+        float mydistance = Vector3.Distance(myLocalPosition, target_position);
+        if (mydistance < 1f)
+        {
+            path.RemoveAt(0);
+            this.path.RemoveAt(0);
+
+        }
+        if(my_rigidbody.velocity.sqrMagnitude <2f)
+        {
+            m_Car.Move(-1f, -1f, 1f, 0f);
+            path.RemoveAt(0);
+            this.path.RemoveAt(0);
+            target_position = path[0];
+            return;
+           
+        }
+
+        // this is how you control the car
+        Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
+        float truesteering = 60 * steering;
+        float trueacceleration = acceleration;
+        m_Car.Move(60 * steering, acceleration, acceleration, 0f);
     }
+}
 }
