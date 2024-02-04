@@ -595,6 +595,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private void FollowPath()
         {
+            
             Vector3 target_position;
 
 
@@ -628,15 +629,22 @@ namespace UnityStandardAssets.Vehicles.Car
             Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
             Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
             Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
-            if (Vector3.Distance(myLocalPosition, target_position) < 0.002f)
+            if (Vector3.Distance(myLocalPosition, target_position) < 1f)
             {
                 path.RemoveAt(0);
                 this.path.RemoveAt(0);
 
             }
+            if(my_rigidbody.velocity.sqrMagnitude ==0f)
+            {
+                path.RemoveAt(0);
+                this.path.RemoveAt(0);
+               
+            }
+
             // this is how you control the car
             Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
-            m_Car.Move(steering, acceleration, acceleration, 0f);
+            m_Car.Move(60*steering, acceleration, acceleration, 0f);
         }
     }
 }
