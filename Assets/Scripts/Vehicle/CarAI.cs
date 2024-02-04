@@ -32,7 +32,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private int carSizey = 3;
 
-        private float k_p = 2.9f;
+        private float k_p = 45f;
 
         private float k_d;
        
@@ -604,7 +604,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private void FollowPath()
         {
-            k_d = 0.18f*k_p;
+            k_d = 2f;
             Vector3 target_position;
 
 
@@ -639,7 +639,7 @@ namespace UnityStandardAssets.Vehicles.Car
             Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
             Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
 
-            if (Vector3.Distance(myLocalPosition, target_position) < 0.35f)
+            if (Vector3.Distance(myLocalPosition, target_position) < 1f)
             {
                 path.RemoveAt(0);
                 //this.path.RemoveAt(0);
@@ -654,7 +654,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
             // this is how you control the car
             Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
-            m_Car.Move(1*steering, acceleration, acceleration, 0f);
+            m_Car.Move(50*steering, acceleration, acceleration, 0f);
         }
     }
 }
