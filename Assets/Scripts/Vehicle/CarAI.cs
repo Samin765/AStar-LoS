@@ -32,9 +32,9 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private int carSizey = 2;
 
-        private float k_p = 0.8f;
+        private float k_p = 40f;
 
-        private float k_d = 0.8f;
+        private float k_d = 2f;
        
 
 
