@@ -588,14 +588,16 @@ public class DroneAI : MonoBehaviour
         // this is how you control the drone
         FollowPath();
     }
-    private void FollowPath()
+ private void FollowPath()
     {
-       
+        k_p = 60f;
+
+         k_p = 0.1f;
         
         Vector3 target_position;
 
 
-        Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
+        Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position) ;
         //y is 0
         myLocalPosition.y = 0;
         target_position = this.path[1];
@@ -615,16 +617,26 @@ public class DroneAI : MonoBehaviour
         Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
         Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
 
-        if (Vector3.Distance(myLocalPosition, target_position) < 1f)
+
+
+        var acceleration_x = position_error.normalized.x;
+        var acceleration_y = position_error.normalized.z;
+
+        Vector3 norm_acceleration = desired_acceleration.normalized;
+        // this is how you control the car
+        Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
+        var dampingFactor = 0.5f;
+
+        float adjustedX = norm_acceleration.x - (dampingFactor * my_rigidbody.velocity.x);
+        float adjustedZ = norm_acceleration.z - (dampingFactor * my_rigidbody.velocity.z);
+
+           m_Drone.Move(adjustedX, adjustedZ);
+        if (Vector3.Distance(myLocalPosition, target_position) < 0.35f)
         {
             
             this.path.RemoveAt(0);
 
         }
-     
 
-        // this is how you control the car
-        Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
-        m_Drone.Move(steering * Mathf.Sin(Time.time * 1.9f), acceleration);
-    }
+        }
 }
