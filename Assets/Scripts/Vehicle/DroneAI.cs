@@ -3,6 +3,49 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityStandardAssets.Vehicles.Car.Map;
+using System.IO;
+using System.Text;
+using System;
+
+
+public class SimplePathSaver
+{
+    public List<Vector3> path; // 你的路径列表
+
+    public void SavePathToFile(List<Vector3> path)
+    {
+        StringBuilder sb = new StringBuilder();
+        foreach (Vector3 point in path)
+        {
+            sb.AppendLine($"{point.x},{point.y},{point.z}");
+        }
+
+        string filePath = Path.Combine(Application.persistentDataPath, "path.txt");
+        File.WriteAllText(filePath, sb.ToString());
+    }
+    public List<Vector3> LoadPathFromFile(string filePath)
+    {
+        List<Vector3> loadedPath = new List<Vector3>();
+        if (File.Exists(filePath))
+        {
+            string[] lines = File.ReadAllLines(filePath);
+            foreach (string line in lines)
+            {
+                string[] parts = line.Split(',');
+                if (parts.Length == 3)
+                {
+                    loadedPath.Add(new Vector3(
+                        float.Parse(parts[0]),
+                        float.Parse(parts[1]),
+                        float.Parse(parts[2])));
+                }
+            }
+        }
+        return loadedPath;
+    }
+
+}
+
 
 [RequireComponent(typeof(DroneController))]
 public class DroneAI : MonoBehaviour
@@ -12,10 +55,17 @@ public class DroneAI : MonoBehaviour
     private BoxCollider droneCollider;
     private List<Vector3> path;
     private int scaleFactor = 1;
-
+    public SimplePathSaver pathSaver = new SimplePathSaver();
     private int carSizex = 2;
 
     private int carSizey = 2;
+    private float k_p = 45f;
+
+    private float k_d;
+    public Vector3 target_velocity;
+    Vector3 old_target_pos;
+
+    Rigidbody my_rigidbody;
     public class Node
     {
         public Vector2Int worldPosition;
@@ -452,7 +502,7 @@ public class DroneAI : MonoBehaviour
         Vector3 start_pos = mapManager.localStartPosition;
         Vector3 goal_pos = mapManager.localGoalPosition;
 
-     
+
 
         var grid_start_pos = obstacleMap.grid.LocalToCell(start_pos);
         var grid_goal_pos = obstacleMap.grid.LocalToCell(goal_pos);
@@ -465,11 +515,11 @@ public class DroneAI : MonoBehaviour
         Vector2Int goal_vector2Int = new Vector2Int(Mathf.FloorToInt(grid_goal_pos.x), Mathf.FloorToInt(grid_goal_pos.y));
 
         Debug.Log(start_vector2Int);
-        this.path = FindPath(start_vector2Int, goal_vector2Int);
-        this.path = PathSmoothing(this.path);
-        //string filePath = Path.Combine(Application.persistentDataPath, "mypath.txt");
-        //pathSaver.SavePathToFile(path, filePath);
-        //this.path = new SimplePathSaver().LoadPathFromFile(Path.Combine(Application.persistentDataPath, "path.txt"));
+        //this.path = FindPath(start_vector2Int, goal_vector2Int);
+        //this.path = PathSmoothing(this.path);
+        
+        //pathSaver.SavePathToFile(this.path);
+        this.path = new SimplePathSaver().LoadPathFromFile(Path.Combine(Application.persistentDataPath, "path.txt"));
 
         //Debug.Log(my_path);
         // Plot your path to see if it makes sense
@@ -487,13 +537,14 @@ public class DroneAI : MonoBehaviour
             Debug.DrawLine(mapManager.grid.LocalToWorld(old_wp), mapManager.grid.LocalToWorld(wp), Color.red, 1000f);
             old_wp = wp;
         }
-       
 
 
+        my_rigidbody = GetComponent<Rigidbody>();
+        old_target_pos = path[0];
 
         // Plot your path to see if it makes sense
         // Note that path can only be seen in "Scene" window, not "Game" window
-       
+
     }
 
 
@@ -535,6 +586,45 @@ public class DroneAI : MonoBehaviour
 
 
         // this is how you control the drone
-        m_Drone.Move(0.4f * Mathf.Sin(Time.time * 1.9f), 0.1f);
+        FollowPath();
+    }
+    private void FollowPath()
+    {
+       
+        
+        Vector3 target_position;
+
+
+        Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
+        //y is 0
+        myLocalPosition.y = 0;
+        target_position = this.path[1];
+        target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
+        old_target_pos = target_position;
+
+        // a PD-controller to get desired acceleration from errors in position and velocity
+        Vector3 position_error = target_position - myLocalPosition;
+        Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
+        Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
+
+        float steering = Vector3.Dot(desired_acceleration, transform.right);
+        float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
+        
+
+        Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
+        Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
+        Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
+
+        if (Vector3.Distance(myLocalPosition, target_position) < 1f)
+        {
+            
+            this.path.RemoveAt(0);
+
+        }
+     
+
+        // this is how you control the car
+        Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
+        m_Drone.Move(steering * Mathf.Sin(Time.time * 1.9f), acceleration);
     }
 }
