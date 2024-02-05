@@ -5,6 +5,7 @@ using System;
 using UnityStandardAssets.Vehicles.Car.Map;
 using System.Threading;
 using System.Security.Cryptography.X509Certificates;
+using UnityEditor.Experimental.GraphView;
 //global variable path
 
 
@@ -18,13 +19,11 @@ namespace UnityStandardAssets.Vehicles.Car
         private BoxCollider carCollider;
 
         private List<Vector3> path;
+        private List<Vector3> smoothedPath;
+
         private List<Vector3> obstacleMap;
-        private Vector3 previousPosition;
-        private float timeSinceLastProgress;
-        private const float progressCheckInterval = 1.0f; // Time interval in seconds to check for progress
-        private const float reverseDuration = 10.0f; // Time duration in seconds to reverse
-        private bool isReversing = false;
-        private float reverseStartTime;
+
+
 
         private int scaleFactor = 1;
 
@@ -32,11 +31,24 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private int carSizey = 3;
 
-        private float k_p = 45f;
+        private float k_p = 100f;
 
         private float k_d;
        
+private enum ControlState
+{
+    Normal,
+    Reversing
+}
 
+private ControlState currentState = ControlState.Normal;
+private float reverseStartTime;
+private float reverseDuration = 1f; // Duration of reversing in seconds, adjust as needed
+private float lastDistanceToTarget = float.MaxValue;
+private float checkStuckInterval = 3f; // Time in seconds to check if we're getting closer
+private float lastCheckTime = 0f;
+
+       
 
         //public GameObject my_target;
 
@@ -101,8 +113,8 @@ namespace UnityStandardAssets.Vehicles.Car
             startWorldPos *= scaleFactor;
             targetWorldPos *= scaleFactor;
 
-            Debug.Log(startWorldPos);
-            Debug.Log(targetWorldPos)
+            //Debug.Log(startWorldPos);
+            //Debug.Log(targetWorldPos)
             ;
 
 
@@ -111,8 +123,8 @@ namespace UnityStandardAssets.Vehicles.Car
 
 
 
-            Debug.Log(startNode.hCost);
-            Debug.Log(targetNode.hCost);
+            //Debug.Log(startNode.hCost);
+            //Debug.Log(targetNode.hCost);
 
             if (targetNode == null || startNode == null)
             {
@@ -157,7 +169,7 @@ namespace UnityStandardAssets.Vehicles.Car
                     }
 
                 }
-                Debug.Log("Current Node in OpenSet: " + currentNode.worldPosition);
+                //Debug.Log("Current Node in OpenSet: " + currentNode.worldPosition);
                 if (currentNode == null)
                 {
                     Debug.Log("CurrentNode == null!");
@@ -172,9 +184,9 @@ namespace UnityStandardAssets.Vehicles.Car
                 if (currentNode.worldPosition == targetWorldPos)
                 {
                     targetNode.parent = oldNode;
-                    Debug.Log("Target Reached!");
-                    Debug.Log("Target Reached: startPos: " + startNode.worldPosition);
-                    Debug.Log("Target Reached: goalPos: " + targetNode.worldPosition);
+                    //Debug.Log("Target Reached!");
+                    //Debug.Log("Target Reached: startPos: " + startNode.worldPosition);
+                    //Debug.Log("Target Reached: goalPos: " + targetNode.worldPosition);
 
                     return RetracePath(startNode, targetNode);
                 }
@@ -182,7 +194,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
                 List<Node> neighbours = GetNeighbours(currentNode, startWorldPos, targetWorldPos, mapData, gameObjectsData);
 
-                Debug.Log("GetNeighbours Done!");
+                //Debug.Log("GetNeighbours Done!");
                 foreach (Node neighbour in neighbours)
                 {
                     ObstacleMap.Traversability traversability = mapData[neighbour.worldPosition];
@@ -201,8 +213,8 @@ namespace UnityStandardAssets.Vehicles.Car
 
                         if (!openSet1.ContainsKey(neighbour.worldPosition))
                             openSet1[neighbour.worldPosition] = neighbour;
-                        Debug.Log(currentNode.worldPosition);
-                        Debug.Log("Node Parent" + openSet1[neighbour.worldPosition].parent.worldPosition);
+                        //Debug.Log(currentNode.worldPosition);
+                        //Debug.Log("Node Parent" + openSet1[neighbour.worldPosition].parent.worldPosition);
                     }
                 }
                 oldNode = currentNode;
@@ -210,7 +222,7 @@ namespace UnityStandardAssets.Vehicles.Car
 
                 j = j + 1;
             }
-            Debug.Log("Did not reach target (end of function)!" + " J: " + j);
+            //Debug.Log("Did not reach target (end of function)!" + " J: " + j);
             return new List<Vector3>();
         }
 
@@ -233,32 +245,32 @@ namespace UnityStandardAssets.Vehicles.Car
 
         private List<Vector3> RetracePath(Node startNode, Node endNode)
         {
-            Debug.Log("reTrace Entered");
+            //Debug.Log("reTrace Entered");
 
 
             ObstacleMap obstacleMap = mapManager.GetObstacleMap();
 
             List<Vector3> path = new List<Vector3>();
-            Debug.Log("reTrace: goalPos: " + endNode.worldPosition);
+            //Debug.Log("reTrace: goalPos: " + endNode.worldPosition);
 
             Node currentNode = endNode;
             Node firstNode = startNode;
 
             while (currentNode.worldPosition != firstNode.worldPosition)
             {
-                Debug.Log("Retracing Path");
+                //Debug.Log("Retracing Path");
                 Vector2Int gridPosition = currentNode.worldPosition;
 
                 Vector3 worldPosition = obstacleMap.grid.CellToLocalInterpolated(new Vector3Int(gridPosition.x / scaleFactor, gridPosition.y / scaleFactor, 0));
-                Debug.Log("Added Path: " + worldPosition);
+                //Debug.Log("Added Path: " + worldPosition);
 
                 path.Add(worldPosition);
                 if (currentNode.parent == null)
                 {
-                    Debug.LogError("Found a node with no parent before reaching the start node");
+                    //Debug.LogError("Found a node with no parent before reaching the start node");
                     break;
                 }
-                Debug.Log("RETRACE PATH: Current Node Parent: " + currentNode.parent.worldPosition);
+                //Debug.Log("RETRACE PATH: Current Node Parent: " + currentNode.parent.worldPosition);
 
                 currentNode = currentNode.parent;
             }
@@ -313,7 +325,7 @@ namespace UnityStandardAssets.Vehicles.Car
                 ,new Vector2Int(1, 1), new Vector2Int(-1, -1)
                 ,new Vector2Int(1, -1), new Vector2Int(-1, 1)
             };
-
+    
             foreach (var dir in directions)
             {
                 Vector2Int neighbourPos = node.worldPosition + dir;
@@ -321,7 +333,7 @@ namespace UnityStandardAssets.Vehicles.Car
                 if (mapData.ContainsKey(neighbourPos) && (mapData[neighbourPos] == ObstacleMap.Traversability.Free || mapData[neighbourPos] == ObstacleMap.Traversability.Partial))
                 {
                     Node neighbourNode = new Node(neighbourPos, startPos, targetPos);
-                    Debug.Log("Added " + neighbourPos + " with fCost/hCost : " + neighbourNode.fCost + "/" + neighbourNode.hCost + " as Neighbour to " + node.worldPosition);
+                    //Debug.Log("Added " + neighbourPos + " with fCost/hCost : " + neighbourNode.fCost + "/" + neighbourNode.hCost + " as Neighbour to " + node.worldPosition);
 
                     neighbours.Add(neighbourNode);
                 }
@@ -329,6 +341,8 @@ namespace UnityStandardAssets.Vehicles.Car
 
             return neighbours;
         }
+
+
 
 
         public bool IsPointInsideAnyBuilding(Vector2Int gridPoint, List<GameObject> buildings)
@@ -407,51 +421,25 @@ namespace UnityStandardAssets.Vehicles.Car
             return mapData;
         }
 
-        private List<Vector3> PathSmoothing(List<Vector3> path)
-        { // not working correctly
-            if (path.Count <= 2)
-            {
-                return path;
-            }
-
-            List<Vector3> smoothPath = new List<Vector3>();
-
-            Vector3 currentPoint = path[0];
-
-            for (int i = 2; i < path.Count; i++)
-            {
-                Vector3 nextPoint = path[i];
-                if (!IsLineOfSightClear(currentPoint, nextPoint))
-                {
-                    smoothPath.Add(path[i - 1]);
-                    currentPoint = path[i - 1];
-                }
-
-            }
-
-            smoothPath.Add(path[path.Count - 1]);
-
-            return smoothPath;
-        }
-
 
         bool IsLineOfSightClear(Vector3 start, Vector3 end)
         {
             Vector3 direction = end - start;
+            direction.Normalize();
             RaycastHit hit;
             float maxRange = 50f;
             if (Physics.Raycast(start + transform.up, transform.TransformDirection(direction), out hit, maxRange))
             {
                 Vector3 closestObstacleInFront = transform.TransformDirection(direction) * hit.distance;
-                if (Vector3.Distance(closestObstacleInFront, end) < 2f)
+                if (Vector3.Distance(start, end)  < hit.distance)
                 { // close neough
+                Debug.LogError("Hit in PAthSmoothing");
                     return true;
                 }
                 //   Debug.Log("Did Hit");
             }
             return false;
         }
-
 
 
         private void Start()
@@ -483,14 +471,6 @@ namespace UnityStandardAssets.Vehicles.Car
             }
 
 
-
-
-            // If you need more details, feel free to check out the ObstacleMap class internals.
-
-
-            // Replace the code below that makes a random path
-            // ...
-
             Vector3 goal_pos = mapManager.localGoalPosition;
 
             //Debug.Log(start_pos);
@@ -506,13 +486,10 @@ namespace UnityStandardAssets.Vehicles.Car
             Vector2Int start_vector2Int = new Vector2Int(Mathf.FloorToInt(grid_start_pos.x), Mathf.FloorToInt(grid_start_pos.y));
             Vector2Int goal_vector2Int = new Vector2Int(Mathf.FloorToInt(grid_goal_pos.x), Mathf.FloorToInt(grid_goal_pos.y));
 
-            Debug.Log(start_vector2Int);
-            this.path = FindPath(start_vector2Int, goal_vector2Int);
 
-            this.path = PathSmoothing(this.path);
-            //Debug.Log(my_path);
-            // Plot your path to see if it makes sense
-            // Note that path can only be seen in "Scene" window, not "Game" window
+            this.path = FindPath(start_vector2Int, goal_vector2Int);
+            //this.path = PathSmoothing(this.path);
+
             Vector3 old_wp = start_pos;
             foreach (var wp in this.path)
             {
@@ -566,16 +543,34 @@ namespace UnityStandardAssets.Vehicles.Car
             // This is how you access information about the terrain from a simulated laser range finder
             // It might be wise to use this for error recovery, but do most of the planning before the race clock starts
             RaycastHit hit;
-            float maxRange = 50f;
-            if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(Vector3.forward), out hit, maxRange))
+            float maxRange = 5f;
+            Vector3 upwardsToLeftDirection = -transform.right + transform.up;
+            Vector3 leftVector = new Vector3(-0.1f, 0f, 0f);
+            var rotatedVector = Quaternion.AngleAxis(60, Vector3.up) * leftVector;
+            Vector3 rightVector = new Vector3(0.1f, 0f, 0f);
+            var rotatedVector2 = Quaternion.AngleAxis(-60, Vector3.up) * rightVector;
+
+            rotatedVector.Normalize();
+
+            upwardsToLeftDirection.Normalize();
+            if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVector), out hit, maxRange))
             {
-                Vector3 closestObstacleInFront = transform.TransformDirection(Vector3.forward) * hit.distance;
+                Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVector) * hit.distance;
                 Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+
                 //   Debug.Log("Did Hit");
             }
 
-            Debug.DrawLine(globalPosition, mapManager.GetGlobalStartPosition(), Color.cyan); // Draw in global space
-            Debug.DrawLine(globalPosition, mapManager.GetGlobalGoalPosition(), Color.blue);
+            if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVector2), out hit, maxRange))
+            {
+                Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVector2) * hit.distance;
+                Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+                
+                //   Debug.Log("Did Hit");
+            }
+
+            //Debug.DrawLine(globalPosition, mapManager.GetGlobalStartPosition(), Color.cyan); // Draw in global space
+            //Debug.DrawLine(globalPosition, mapManager.GetGlobalGoalPosition(), Color.blue);
 
             // Check and print traversability of currect position
             Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position); // Position of car w.r.p map coordinate origin (not world global)
@@ -602,59 +597,202 @@ namespace UnityStandardAssets.Vehicles.Car
             FollowPath();
         }
 
-        private void FollowPath()
+
+
+private void FollowPath()
+{
+   
+    k_d = 2f;
+    var upcomingDirection = path[5] - path[4];
+    upcomingDirection.Normalize();
+
+    Vector3 directionA = (path[5] - path[4]).normalized;
+    Vector3 directionB = (path[6] - path[5]).normalized; 
+
+    float angle = Vector3.Angle(directionA, directionB);
+    Debug.LogError(angle);
+
+    if(angle > 47){ 
+        Debug.LogError("Drecreasing K-P");
+
+        k_p = 25;
+        k_d = 1.5f;
+    }
+    else{
+        k_d = 2f;
+        k_p = 30f;
+    }
+
+
+
+
+
+    Vector3 target_position;
+    Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
+    myLocalPosition.y = 0;
+
+    if (path != null && path.Count > 1)
+    {
+        target_position = path[1];
+    }
+    else
+    {       
+        m_Car.Move(0f, 0f, 0f, 1f);
+        return; // Fallback or stop if no path
+    }
+
+    target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
+    old_target_pos = target_position;
+
+    Vector3 position_error = target_position - myLocalPosition;
+    Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
+    Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
+
+
+
+
+ float currentDistanceToTarget = Vector3.Distance(myLocalPosition, target_position);
+
+    // Check if we're not getting closer to the target position
+    if (Time.time - lastCheckTime > checkStuckInterval)
+    {
+        if (currentDistanceToTarget == lastDistanceToTarget)
         {
-            k_d = 2f;
-            Vector3 target_position;
+            // Not getting closer, consider reversing
+            if (currentState == ControlState.Normal)
+            {
+                currentState = ControlState.Normal;
+                reverseStartTime = Time.time;
+            }
+        }
+        else
+        {
+            // Getting closer or already reversing, reset check
+            currentState = ControlState.Normal;
+        }
+        lastDistanceToTarget = currentDistanceToTarget;
+        lastCheckTime = Time.time;
+    }
+
+    switch (currentState)
+    {
+        case ControlState.Reversing:
+            if (Time.time - reverseStartTime < reverseDuration)
+            {
+                // Apply reversing logic
+                desired_acceleration = new Vector3(0, 0, -1); // Simplified reverse acceleration
+            }
+            else
+            {
+                currentState = ControlState.Normal; // Return to normal after reversing
+            }
+            break;
+    }
 
 
-            Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
-            //y is 0
-            myLocalPosition.y = 0;
+
+
+
+
+    float maxRange = 50f;
+    RaycastHit hit;
+    Vector3 globalPosition = transform.position;
+
+    // Check for obstacle to the right
+    Vector3 rightVector = new Vector3(0.1f, 0f, 0f);
+    var rotatedVectorRight = Quaternion.AngleAxis(-45, Vector3.up) * rightVector;
+
+    Vector3 leftVector = new Vector3(-0.1f, 0f, 0f);
+    var rotatedVectorLeft = Quaternion.AngleAxis(45, Vector3.up) * leftVector;
+
+
+    float steering = Vector3.Dot(desired_acceleration, transform.right);
+    float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
+
+
+
+    if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVectorRight), out hit, maxRange)) 
+    {   
+        //Vector3 closestObstacleInFront = transform.TransformDirection(Vector3.right) * hit.distance;
+        if (hit.distance < 2.7f) // 
+        {
+
+            Debug.LogError("Hit to the right");
+
+            Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVectorRight) * hit.distance;
+            Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+
+            steering = steering - 1f;
+
             
-          
-            if (driveInCircle) // for the circle option
-            {
-                alpha += Time.deltaTime * (circleSpeed / circleRadius);
-                target_position = circleCenter + circleRadius * new Vector3((float)Math.Sin(alpha), 0f, (float)Math.Cos(alpha));
-                target_velocity = circleSpeed * new Vector3((float)Math.Cos(alpha), 0f, -(float)Math.Sin(alpha));
-            }
-            else // if target is a game object
-            {
-                target_position = path[1];
-                target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
-            }
-
-            old_target_pos = target_position;
-
-            // a PD-controller to get desired acceleration from errors in position and velocity
-            Vector3 position_error = target_position - myLocalPosition;
-            Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
-            Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
-
-            float steering = Vector3.Dot(desired_acceleration, transform.right);
-            float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
-
-            Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
-            Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
-            Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
-
-            if (Vector3.Distance(myLocalPosition, target_position) < 1f)
-            {
-                path.RemoveAt(0);
-                //this.path.RemoveAt(0);
-
-            }
-            if(my_rigidbody.velocity.sqrMagnitude ==0f)
-            {
-                path.RemoveAt(0);
-                //this.path.RemoveAt(0);
-               
-            }
-
-            // this is how you control the car
-            Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
-            m_Car.Move(50*steering, acceleration, acceleration, 0f);
         }
     }
+
+
+    // Check for obstacle to the left
+    else if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVectorLeft), out hit, maxRange))
+    {
+        if (hit.distance < 2.7f) 
+        {
+
+
+            Debug.LogError("Hit to the left");
+            Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVectorLeft) * hit.distance;
+            Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+
+            
+            steering = steering + 1f;
+            
+            //steeringAdjustmentFactor = 0.5f; // Adjust this value as needed
+        }
+    }
+
+
+    if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(Vector3.forward), out hit, maxRange))
+    {
+        if (hit.distance < 20f && 1.5f <hit.distance) 
+        {
+
+
+            Debug.LogError("Hit forward");
+            Vector3 closestObstacleInFront = transform.TransformDirection(Vector3.forward) * hit.distance;
+            Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+
+
+            acceleration = acceleration+(-20/hit.distance);
+
+            
+
+
+            //steeringAdjustmentFactor = 0.5f; // Adjust this value as needed
+        }
+        else if(hit.distance < 1.5f ||  my_rigidbody.velocity.sqrMagnitude < 1f){
+            acceleration = -1;
+           
+        }
+
+    }
+
+
+
+
+    Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
+    Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
+    Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
+
+    if (Vector3.Distance(myLocalPosition, target_position) < 0.35f)
+    {
+        path.RemoveAt(0);
+    }
+
+    Debug.Log($"Steering: {steering} Acceleration: {acceleration}");
+    m_Car.Move(steering, acceleration, acceleration, 0f);
+}
+
+
+
+
+    }
+
+    
 }
