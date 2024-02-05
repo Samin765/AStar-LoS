@@ -588,7 +588,8 @@ public class DroneAI : MonoBehaviour
         // this is how you control the drone
         FollowPath();
     }
- private void FollowPath()
+
+          private void FollowPath()
     {
         k_p = 60f;
 
@@ -622,13 +623,16 @@ public class DroneAI : MonoBehaviour
         var acceleration_x = position_error.normalized.x;
         var acceleration_y = position_error.normalized.z;
 
-        Vector3 norm_acceleration = desired_acceleration.normalized;
+        Vector3 norm_acceleration = desired_acceleration;
         // this is how you control the car
         Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
         var dampingFactor = 0.5f;
 
         float adjustedX = norm_acceleration.x - (dampingFactor * my_rigidbody.velocity.x);
         float adjustedZ = norm_acceleration.z - (dampingFactor * my_rigidbody.velocity.z);
+
+        Vector3 directionToWaypoint = (target_position - transform.position).normalized;
+        
 
            m_Drone.Move(adjustedX, adjustedZ);
         if (Vector3.Distance(myLocalPosition, target_position) < 0.35f)
