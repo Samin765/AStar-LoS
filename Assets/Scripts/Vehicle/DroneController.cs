@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityStandardAssets.CrossPlatformInput;
@@ -6,8 +6,8 @@ using UnityStandardAssets.CrossPlatformInput;
 
 public class DroneController : MonoBehaviour
 {
-    public float max_speed = 15f;
-    public float max_acceleration = 15f;
+    public float max_speed = 10f;
+    public float max_acceleration = 5f;
 
     private float v = 0f; //desired acceleration first component
     private float h = 0f; //desired acceleration second component
