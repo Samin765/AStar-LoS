@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System;
 using UnityEngine;
 using System;
 using UnityStandardAssets.Vehicles.Car.Map;
@@ -14,16 +15,14 @@ namespace UnityStandardAssets.Vehicles.Car
     [RequireComponent(typeof(CarController))]
     public class CarAI : MonoBehaviour
     {
-        private CarController m_Car; // the car controller we want to use
+        private CarController m_Car; // <----the car controller we want to use
         private MapManager mapManager;
         private BoxCollider carCollider;
+        //private Pathfinding pathfinding;
 
         private List<Vector3> path;
         private List<Vector3> smoothedPath;
-
         private List<Vector3> obstacleMap;
-
-
 
         private int scaleFactor = 1;
 
@@ -34,21 +33,19 @@ namespace UnityStandardAssets.Vehicles.Car
         private float k_p = 100f;
 
         private float k_d;
-       
-private enum ControlState
-{
-    Normal,
-    Reversing
-}
 
-private ControlState currentState = ControlState.Normal;
-private float reverseStartTime;
-private float reverseDuration = 1f; // Duration of reversing in seconds, adjust as needed
-private float lastDistanceToTarget = float.MaxValue;
-private float checkStuckInterval = 3f; // Time in seconds to check if we're getting closer
-private float lastCheckTime = 0f;
+        private enum ControlState
+        {
+            Normal,
+            Reversing
+        }
 
-       
+        private ControlState currentState = ControlState.Normal;
+        private float reverseStartTime;
+
+        private float lastDistanceToTarget = float.MaxValue;
+        private float checkStuckInterval = 3f; // Time in seconds to check if we're getting closer
+        private float lastCheckTime = 0f;
 
         //public GameObject my_target;
 
@@ -58,6 +55,23 @@ private float lastCheckTime = 0f;
         float alpha = 0.2f;
         public Vector3 circleCenter = Vector3.zero;
 
+        //AI Path Smoothing
+        public int smoothFragments = 4;
+        public int smoothLookAhead = 1;
+        public int smoothSkip = 1;
+
+        //Reverse on collide with obstacle
+        public float waypointRadius = 2f; 
+        public float reverseCarSpeedThreshold = 1.1f;
+        public float reverseDelayTime = 1f;
+        public float reverseDuration = 1f;
+        public float reverseForce = 20f;
+
+        private Vector3 scaleVector = new Vector3(4.822223f,15,30.16f);
+
+        bool reversing = false;
+        float reverseTime;
+        Coroutine reverseCR;
 
         public Vector3 target_velocity;
         Vector3 old_target_pos;
@@ -89,19 +103,13 @@ private float lastCheckTime = 0f;
             {
                 return worldPosition.GetHashCode();
             }
-
-
-
-
         }
+
+        //*** A* Algorithm
         private List<Vector3> FindPath(Vector2Int startWorldPos, Vector2Int targetWorldPos)
         {
-            //MapManager oldMapManager = new MapManager();
 
-            //var oldObstacleMap = oldMapManager.GetObstacleMap();
 
-            //oldObstacleMap.grid.cellSize.Set(0.1f, 0.1f, 0.1f);
-            //MapManager mapManager = new MapManager();
             var obstacleMap = mapManager.GetObstacleMap();
 
             Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = UpdateMapData(obstacleMap.traversabilityPerCell, startWorldPos);
@@ -110,12 +118,12 @@ private float lastCheckTime = 0f;
             // NOTES: We are creating new Nodes in "Neighbour" and we are using these new Node Objects in the open/closed sets. When we try to use equal we are doing object reference. 
             //        so even if Nodes have same griddPoint they will be treated as different Nodes whhich in turn makes use pick the same Node multiple times thus a infinite loop. 
             // Neighbour added into OpenSet can be a Node we have already traversed. The algorithm wrongly chooses the node, it does not take the node with the lowest hCost when multiple nodes have same fCost
+            
+            
             startWorldPos *= scaleFactor;
             targetWorldPos *= scaleFactor;
 
-            //Debug.Log(startWorldPos);
-            //Debug.Log(targetWorldPos)
-            ;
+
 
 
             Node startNode = new Node(startWorldPos, startWorldPos, targetWorldPos);
@@ -123,8 +131,7 @@ private float lastCheckTime = 0f;
 
 
 
-            //Debug.Log(startNode.hCost);
-            //Debug.Log(targetNode.hCost);
+
 
             if (targetNode == null || startNode == null)
             {
@@ -140,17 +147,12 @@ private float lastCheckTime = 0f;
             HashSet<Vector2Int> closedSet1 = new HashSet<Vector2Int>();
 
 
-            //Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
 
 
-            //Dictionary<Vector2Int, ObstacleMap.Traversability> mapData = obstacleMap.traversabilityPerCell;
+            Dictionary<Vector2Int, List<GameObject>> gameObjectsData = obstacleMap.gameGameObjectsPerCell;
 
-            Dictionary<Vector2Int, List<GameObject>> gameObjectsData = obstacleMap.gameGameObjectsPerCell; //LÄS: använd obstacleMap för att kolla för partial Blocks. Dom innehåller information om
-                                                                                                           // hur blocken är blockerade
 
-            Debug.LogError(mapData.Count);
-            //Debug.LogError(newMapData.Count);
-            //openSet.Add(startNode);
+            Debug.LogError("MapData Count: " + mapData.Count);
             openSet1.Add(startWorldPos, startNode);
             var j = 0;
             Node oldNode = startNode;
@@ -226,6 +228,69 @@ private float lastCheckTime = 0f;
             return new List<Vector3>();
         }
 
+        private List<Vector3> SmoothPath(List<Vector3> pathToSmooth)
+        {
+            if (pathToSmooth == null || pathToSmooth.Count <= 0) return new List<Vector3>();
+            List<Vector3> smoothPath = new List<Vector3>();
+            int skipIndex = 0;
+
+
+            for (int i = 0; i < pathToSmooth.Count; i++)
+            {
+                if (skipIndex >= smoothSkip)
+                {
+                    skipIndex = 0;
+                    continue;
+                }
+
+                skipIndex++;
+
+                //if(i == 0)
+                //{
+                //    //Start vector
+                //    smoothPath.Add(pathToSmooth[0]);
+                //}
+                if(i == pathToSmooth.Count - 1)
+                {
+                    //End Vector
+                    smoothPath.Add(pathToSmooth[pathToSmooth.Count - 1]);
+                }
+                else
+                {
+                    //Middle vectors
+                    for (int j = 1; j < smoothFragments; j++)
+                    {
+                        var currentLookAhead = smoothLookAhead;
+
+                        //Keep trying path closer to the reference path
+                        while ((i + currentLookAhead >= pathToSmooth.Count) || pathToSmooth[i + currentLookAhead] == null)
+                        {
+                            currentLookAhead--;
+
+                            if (i + currentLookAhead <= 0) break;
+                        }
+
+                        Vector3 start = pathToSmooth[i];
+                        Vector3 end = pathToSmooth[i + currentLookAhead];
+
+                        //var centerPivot = (start + end) * 0.5f;
+
+                        //centerPivot -= new Vector3(0, -smoothOffset);
+
+                        //var startRelativeCenter = start - centerPivot;
+                       // var endRelativeCenter = end - centerPivot;
+
+                        Vector3 lerpedPos = Vector3.Slerp(start, end, (float)j / (float)smoothFragments);
+                        //Vector3 lerpedPos = Vector3.Slerp(pathToSmooth[i], pathToSmooth[i + currentLookAhead], (float)j / (float)smoothFragments);
+
+                        smoothPath.Add(lerpedPos);
+                    }
+                }
+            }
+
+            return smoothPath;
+        }
+
         private Node GetLowestCostNode(Dictionary<Vector2Int, Node> openSet)
         {
             Node lowestCostNode = null;
@@ -239,7 +304,7 @@ private float lastCheckTime = 0f;
                 }
             }
 
-            Debug.Log("LowestCostNode: " + lowestCostNode.worldPosition);
+           // Debug.Log("LowestCostNode: " + lowestCostNode.worldPosition);
             return lowestCostNode;
         }
 
@@ -260,8 +325,12 @@ private float lastCheckTime = 0f;
             {
                 //Debug.Log("Retracing Path");
                 Vector2Int gridPosition = currentNode.worldPosition;
+                                    Vector3 scaleVector = new Vector3(4.822223f, 15f, 30.16f);
+                                  
 
-                Vector3 worldPosition = obstacleMap.grid.CellToLocalInterpolated(new Vector3Int(gridPosition.x / scaleFactor, gridPosition.y / scaleFactor, 0));
+                Vector3 worldPosition = obstacleMap.grid.CellToLocalInterpolated(new Vector3(gridPosition.x ,gridPosition.y ,0  ));
+
+                  
                 //Debug.Log("Added Path: " + worldPosition);
 
                 path.Add(worldPosition);
@@ -298,7 +367,7 @@ private float lastCheckTime = 0f;
             return Mathf.FloorToInt(Mathf.Sqrt(dx * dx + dy * dy));
         }
 
-        private static float GetDistance(Vector2Int start, Vector2Int goal)
+        private static float GetDistanceWorking(Vector2Int start, Vector2Int goal)
         {
             float D = 1f;//float D = 10; // 
             float D2 = Mathf.Sqrt(2f); //float D2 = 14; // Mathf.Sqrt(2f);
@@ -308,8 +377,29 @@ private float lastCheckTime = 0f;
 
             return (D * (dx + dy) + (D2 - 2 * D) * Mathf.Min(dx, dy));
         }
+        
 
 
+        private static float GetDistance(Vector2Int start, Vector2Int goal)
+        {
+                    Vector3 scaleVector = new Vector3(4.822223f, 15f, 30.16f);
+
+    // Base cost for moving one unit horizontally or vertically
+    float D = 35f;
+    // Diagonal movement cost, assuming it's sqrt(scaleX^2 + scaleY^2)
+    float D2 = Mathf.Sqrt(scaleVector.x * scaleVector.x+ scaleVector.z * scaleVector.z);
+
+    int dx = Mathf.Abs(goal.x - start.x);
+    int dy = Mathf.Abs(goal.y - start.y);
+
+    // Scale the distances by their respective axis scaling factors
+    float scaledDx = dx * scaleVector.x;
+    float scaledDy = dy * scaleVector.z;
+
+    // Use the scaled distances to calculate the total distance
+    // Note: The heuristic adjusts to account for the minimum scaled distance being used for diagonal movement
+    return (D * (scaledDx + scaledDy) + (D2 - 2 * D) * Mathf.Min(scaledDx, scaledDy));
+        }
 
         private List<Node> GetNeighbours(Node node, Vector2Int startPos, Vector2Int targetPos, Dictionary<Vector2Int, ObstacleMap.Traversability> newMapData, Dictionary<Vector2Int, List<GameObject>> gameObjectsData)
         {
@@ -325,7 +415,7 @@ private float lastCheckTime = 0f;
                 ,new Vector2Int(1, 1), new Vector2Int(-1, -1)
                 ,new Vector2Int(1, -1), new Vector2Int(-1, 1)
             };
-    
+
             foreach (var dir in directions)
             {
                 Vector2Int neighbourPos = node.worldPosition + dir;
@@ -342,9 +432,7 @@ private float lastCheckTime = 0f;
             return neighbours;
         }
 
-
-
-
+        // not used
         public bool IsPointInsideAnyBuilding(Vector2Int gridPoint, List<GameObject> buildings)
         {
 
@@ -368,7 +456,7 @@ private float lastCheckTime = 0f;
             return false; // Point is not inside any building
         }
 
-
+        // Updates MapData to create a bigger boundary between blocked objects in refernce to carsize
         private Dictionary<Vector2Int, ObstacleMap.Traversability> UpdateMapData(Dictionary<Vector2Int, ObstacleMap.Traversability> mapData, Vector2Int startPos)
         {
             List<Vector2Int> cellsToUpdate = new List<Vector2Int>();
@@ -405,9 +493,9 @@ private float lastCheckTime = 0f;
             {
                 mapData[cellPos] = ObstacleMap.Traversability.Blocked;
             }
-
+            // Clear cells in front of the car at the start post
             for (int x = -15; x <= 15; x++)
-            {            // Clear cells in front of the car at the start post
+            {
                 for (int y = 0; y <= 9; y++)
                 {
                     Vector2Int cellInFront = startPos + new Vector2Int(x, y);
@@ -421,7 +509,7 @@ private float lastCheckTime = 0f;
             return mapData;
         }
 
-
+        // not working
         bool IsLineOfSightClear(Vector3 start, Vector3 end)
         {
             Vector3 direction = end - start;
@@ -431,9 +519,9 @@ private float lastCheckTime = 0f;
             if (Physics.Raycast(start + transform.up, transform.TransformDirection(direction), out hit, maxRange))
             {
                 Vector3 closestObstacleInFront = transform.TransformDirection(direction) * hit.distance;
-                if (Vector3.Distance(start, end)  < hit.distance)
+                if (Vector3.Distance(start, end) < hit.distance)
                 { // close neough
-                Debug.LogError("Hit in PAthSmoothing");
+                    Debug.LogError("Hit in PAthSmoothing");
                     return true;
                 }
                 //   Debug.Log("Did Hit");
@@ -441,6 +529,10 @@ private float lastCheckTime = 0f;
             return false;
         }
 
+        private void Awake()
+        {
+            //pathfinding = GetComponent<Pathfinding>();
+        }
 
         private void Start()
         {
@@ -452,6 +544,7 @@ private float lastCheckTime = 0f;
 
             // Plan your path here
             Vector3 someLocalPosition = mapManager.grid.WorldToLocal(transform.position); // Position of car w.r.p map coordinate origin (not world global)
+
             // transform.localRotation;  Rotation w.r.p map coordinate origin (not world global)
 
             // This is how you access information about specific points
@@ -487,8 +580,13 @@ private float lastCheckTime = 0f;
             Vector2Int goal_vector2Int = new Vector2Int(Mathf.FloorToInt(grid_goal_pos.x), Mathf.FloorToInt(grid_goal_pos.y));
 
 
-            this.path = FindPath(start_vector2Int, goal_vector2Int);
-            //this.path = PathSmoothing(this.path);
+            //this.path = FindPath(start_vector2Int, goal_vector2Int);
+            List<Vector3> unSmoothPath = FindPath(start_vector2Int, goal_vector2Int);
+
+            //Apply Path Smoothing
+            this.path = SmoothPath(unSmoothPath);
+
+            DrawDebugLineOnPath();
 
             Vector3 old_wp = start_pos;
             foreach (var wp in this.path)
@@ -501,200 +599,115 @@ private float lastCheckTime = 0f;
             my_rigidbody = GetComponent<Rigidbody>();
             old_target_pos = path[0];
             circleCenter = mapManager.grid.WorldToLocal(transform.position);
-
+        }
+        
+        public void DrawDebugLineOnPath()
+        {
+            for (int i = 0; i < path.Count; i++)
+            {
+                if (i == 0)
+                {
+                    //Start vector
+                    if(path [i + 1] != null)
+                        Debug.DrawLine(path[i], path[i] - path[i + 1], Color.blue, 1000f);
+                }
+                else if (i == path.Count - 1)
+                {
+                    //End Vector
+                    if (path[i - 1] != null)
+                        Debug.DrawLine(path[i], path[i] - path[i - 1], Color.blue, 1000f);
+                }
+                else
+                {
+                    if (path[i + 1] != null)
+                        Debug.DrawLine(path[i], path[i] - path[i + 1], Color.blue, 1000f);
+                }
+            }
         }
 
 
         private void FixedUpdate()
         {
-            
-            var obstacleMap = mapManager.GetObstacleMap();
 
-            Vector3 start_pos = mapManager.localStartPosition;
-            Vector3 currentGridPosition = mapManager.grid.WorldToLocal(transform.position);
-
-            Vector3 currentt_pos = mapManager.grid.WorldToLocal(transform.position);
-
-            var grid_start_pos = obstacleMap.grid.LocalToCell(currentt_pos);
-
-
-            var exampleObstacle = mapManager.GetObstacleMap().obstacleObjects[0];
-
-            var globalPosition = transform.position;
-
-            bool overlapped = Physics.ComputePenetration(
-                carCollider,
-                globalPosition,
-                transform.rotation, // Use global position 
-                exampleObstacle.GetComponent<MeshCollider>(), // Can take any collider and "project" it using position and rotation vectors.
-                exampleObstacle.transform.position,
-                exampleObstacle.transform.rotation,
-                out var direction,
-                out var distance
-            );
-            // 'out's give shortest direction and distance to "uncollide" two objects.
-            if (overlapped || distance > 0)
-            {
-                // Means collider inside another   
-            }
-            // For more details https:docs.unity3d.com/ScriptReference/Physics.ComputePenetration.html
-            ///////////////////////////
-
-            // This is how you access information about the terrain from a simulated laser range finder
-            // It might be wise to use this for error recovery, but do most of the planning before the race clock starts
-            RaycastHit hit;
-            float maxRange = 5f;
-            Vector3 upwardsToLeftDirection = -transform.right + transform.up;
-            Vector3 leftVector = new Vector3(-0.1f, 0f, 0f);
-            var rotatedVector = Quaternion.AngleAxis(60, Vector3.up) * leftVector;
-            Vector3 rightVector = new Vector3(0.1f, 0f, 0f);
-            var rotatedVector2 = Quaternion.AngleAxis(-60, Vector3.up) * rightVector;
-
-            rotatedVector.Normalize();
-
-            upwardsToLeftDirection.Normalize();
-            if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVector), out hit, maxRange))
-            {
-                Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVector) * hit.distance;
-                Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
-
-                //   Debug.Log("Did Hit");
-            }
-
-            if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVector2), out hit, maxRange))
-            {
-                Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVector2) * hit.distance;
-                Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
-                
-                //   Debug.Log("Did Hit");
-            }
-
-            //Debug.DrawLine(globalPosition, mapManager.GetGlobalStartPosition(), Color.cyan); // Draw in global space
-            //Debug.DrawLine(globalPosition, mapManager.GetGlobalGoalPosition(), Color.blue);
-
-            // Check and print traversability of currect position
-            Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position); // Position of car w.r.p map coordinate origin (not world global)
-            //(obstacleMap.IsLocalPointTraversable(myLocalPosition));
-
-            // Execute your path here
-            // ...
-            if (path == null) // no target, only circle option works
-            {
-                old_target_pos = transform.position;
-            }
-            else
-            {
-                old_target_pos = path[0];
-            }
-
-            
-
-            // Initialize circle at starting position
-            circleCenter = transform.position;
 
 
 
             FollowPath();
         }
 
+        private void FollowPath()
+        {
+            if (path == null) return;
 
 
-private void FollowPath()
+            if(path.Count > 0)
+            {
+            Vector3 target_position;
+            Vector3 target_position1;
+                k_d = 2f;
+                k_p = 30f;
+
+                if (path.Count > 1)
 {
-   
-    k_d = 2f;
-    var upcomingDirection = path[5] - path[4];
-    upcomingDirection.Normalize();
+                    target_position = Vector3.Scale(path[1], scaleVector);
+}
+                else if (path.Count == 1)
+                {
+                    target_position = Vector3.Scale(path[0], scaleVector);
+                }
+                else
+                {
+                    target_position = transform.position;
+                }
+             
 
-    Vector3 directionA = (path[5] - path[4]).normalized;
-    Vector3 directionB = (path[6] - path[5]).normalized; 
+                Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
+               // Vector3 target_position = Vector3.Scale(target_position1, transform.localScale);
+                target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
+                old_target_pos = target_position;
 
-    float angle = Vector3.Angle(directionA, directionB);
-    Debug.LogError(angle);
+                Vector3 position_error = target_position - myLocalPosition;
+                Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
+                Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
 
-    if(angle > 47){ 
-        Debug.LogError("Drecreasing K-P");
+                
 
-        k_p = 25;
-        k_d = 1.5f;
-    }
-    else{
-        k_d = 2f;
-        k_p = 30f;
-    }
+                float steering = Vector3.Dot(desired_acceleration, transform.right);
+                float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
 
+                if (Mathf.Abs(Vector3.Distance(myLocalPosition, target_position)) < waypointRadius)
+                {
+                    path.RemoveAt(0);
+                }       
 
+                Debug.Log("Car Speed:" + m_Car.CurrentSpeed);
 
+                //Reverse Check
+                if (m_Car.CurrentSpeed <= reverseCarSpeedThreshold)
+                {
+                    reverseTime += Time.deltaTime;
+                    if(reverseTime >= reverseDuration && !reversing)
+                    {
+                        //Reverse
+                        reversing = true;
+                        reverseTime = 0f;
 
+                        if (reverseCR != null) StopCoroutine(reverseCR);
+                        reverseCR = StartCoroutine(Co_ResetReverAfterTime());
+                    }
+                }
+                else
+                    reverseTime = 0f;
 
-    Vector3 target_position;
-    Vector3 myLocalPosition = mapManager.grid.WorldToLocal(transform.position);
-    myLocalPosition.y = 0;
+                if (reversing)
+                {
+                    float steer = UnityEngine.Random.Range(-0.50f, 0.50f);
 
-    if (path != null && path.Count > 1)
-    {
-        target_position = path[1];
-    }
-    else
-    {       
-        m_Car.Move(0f, 0f, 0f, 1f);
-        return; // Fallback or stop if no path
-    }
-
-    target_velocity = (target_position - old_target_pos) / Time.fixedDeltaTime;
-    old_target_pos = target_position;
-
-    Vector3 position_error = target_position - myLocalPosition;
-    Vector3 velocity_error = target_velocity - my_rigidbody.velocity;
-    Vector3 desired_acceleration = k_p * position_error + k_d * velocity_error;
-
-
-
-
- float currentDistanceToTarget = Vector3.Distance(myLocalPosition, target_position);
-
-    // Check if we're not getting closer to the target position
-    if (Time.time - lastCheckTime > checkStuckInterval)
-    {
-        if (currentDistanceToTarget == lastDistanceToTarget)
-        {
-            // Not getting closer, consider reversing
-            if (currentState == ControlState.Normal)
-            {
-                currentState = ControlState.Normal;
-                reverseStartTime = Time.time;
-            }
-        }
-        else
-        {
-            // Getting closer or already reversing, reset check
-            currentState = ControlState.Normal;
-        }
-        lastDistanceToTarget = currentDistanceToTarget;
-        lastCheckTime = Time.time;
-    }
-
-    switch (currentState)
-    {
-        case ControlState.Reversing:
-            if (Time.time - reverseStartTime < reverseDuration)
-            {
-                // Apply reversing logic
-                desired_acceleration = new Vector3(0, 0, -1); // Simplified reverse acceleration
-            }
-            else
-            {
-                currentState = ControlState.Normal; // Return to normal after reversing
-            }
-            break;
-    }
-
-
-
-
-
-
-    float maxRange = 50f;
+                    m_Car.Move(steer, reverseForce, reverseForce, 0f);
+                }
+                else
+                {
+                        float maxRange = 50f;
     RaycastHit hit;
     Vector3 globalPosition = transform.position;
 
@@ -704,23 +717,16 @@ private void FollowPath()
 
     Vector3 leftVector = new Vector3(-0.1f, 0f, 0f);
     var rotatedVectorLeft = Quaternion.AngleAxis(45, Vector3.up) * leftVector;
-
-
-    float steering = Vector3.Dot(desired_acceleration, transform.right);
-    float acceleration = Vector3.Dot(desired_acceleration, transform.forward);
-
-
-
-    if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVectorRight), out hit, maxRange)) 
+                     if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(rotatedVectorRight), out hit, maxRange)) 
     {   
         //Vector3 closestObstacleInFront = transform.TransformDirection(Vector3.right) * hit.distance;
         if (hit.distance < 2.7f) // 
         {
 
-            Debug.LogError("Hit to the right");
+            //Debug.LogError("Hit to the right");
 
             Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVectorRight) * hit.distance;
-            Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+            //Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
 
             steering = steering - 1f;
 
@@ -736,9 +742,9 @@ private void FollowPath()
         {
 
 
-            Debug.LogError("Hit to the left");
+            //Debug.LogError("Hit to the left");
             Vector3 closestObstacleInFront = transform.TransformDirection(rotatedVectorLeft) * hit.distance;
-            Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+            //Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
 
             
             steering = steering + 1f;
@@ -747,6 +753,7 @@ private void FollowPath()
         }
     }
 
+  // Check for obstacle forward
 
     if (Physics.Raycast(globalPosition + transform.up, transform.TransformDirection(Vector3.forward), out hit, maxRange))
     {
@@ -754,9 +761,9 @@ private void FollowPath()
         {
 
 
-            Debug.LogError("Hit forward");
+            //Debug.LogError("Hit forward");
             Vector3 closestObstacleInFront = transform.TransformDirection(Vector3.forward) * hit.distance;
-            Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
+            //Debug.DrawRay(globalPosition, closestObstacleInFront, Color.yellow);
 
 
             acceleration = acceleration+(-20/hit.distance);
@@ -766,33 +773,32 @@ private void FollowPath()
 
             //steeringAdjustmentFactor = 0.5f; // Adjust this value as needed
         }
-        else if(hit.distance < 1.5f ||  my_rigidbody.velocity.sqrMagnitude < 1f){
-            acceleration = -1;
+      
+
+    }
+                    Debug.Log($"Steering: {steering} Acceleration: {acceleration}");
+                    m_Car.Move(steering, acceleration, acceleration, 0f);
+                }
+            }
+
+
+            //Apply hand brake
+            if(path.Count <= 2)
+            {
+                //End path
+                m_Car.Move(0f, 0f, 0f, 1f);
+            }
+
+            
            
         }
 
+        IEnumerator Co_ResetReverAfterTime()
+        {
+            yield return new WaitForSeconds(reverseDuration);
+            reversing = false;
+        }
+
+       
     }
-
-
-
-
-    Debug.DrawLine(target_position, target_position + target_velocity, Color.red);
-    Debug.DrawLine(myLocalPosition, myLocalPosition + my_rigidbody.velocity, Color.blue);
-    Debug.DrawLine(myLocalPosition, myLocalPosition + desired_acceleration, Color.black);
-
-    if (Vector3.Distance(myLocalPosition, target_position) < 0.35f)
-    {
-        path.RemoveAt(0);
-    }
-
-    Debug.Log($"Steering: {steering} Acceleration: {acceleration}");
-    m_Car.Move(steering, acceleration, acceleration, 0f);
-}
-
-
-
-
-    }
-
-    
 }
