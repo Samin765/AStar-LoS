@@ -276,4 +276,284 @@ public class FollowPath
 
         // this is how you control the car
         Debug.Log("Steering:" + steering + " Acceleration:" + acceleration);
-        flo
+        float truesteering = 60 * steering;
+        float trueacceleration = acceleration;
+        m_Car.Move(60 * steering, acceleration, acceleration, 0f);
+        }
+    }
+
+    public void FollowPointDrone(Vector3 targetPosition)
+    {
+
+        k_p = 0.2f;
+        k_d = 0.1f * k_p;
+        if (targetPosition == null)
+        {
+            Debug.LogError("Target position is null.");
+            return;
+        }
+
+
+        Vector3 myLocalPosition = obstacleMap.mapGrid.WorldToLocal(my_rigidbody.transform.position);
+
+        // Calculate desired velocity towards the target position
+        Vector3 targetVelocity = (targetPosition - myLocalPosition) / Time.fixedDeltaTime;
+
+        // Calculate position error and velocity error
+        Vector3 positionError = targetPosition - myLocalPosition;
+        Vector3 velocityError = targetVelocity - my_rigidbody.velocity;
+
+        // Calculate desired acceleration using proportional and derivative gains
+        Vector3 desiredAcceleration = k_p * positionError + k_d * velocityError;
+
+        // Calculate steering angle and acceleration
+        float steering = Vector3.Dot(desiredAcceleration, my_rigidbody.transform.right);
+        float acceleration = Vector3.Dot(desiredAcceleration, my_rigidbody.transform.forward);
+
+        // Move the car based on the calculated steering angle and acceleration
+        GlobalVariables.CurrentCarPos[GlobalVariables.carIDMap[m_Drone.GetInstanceID()]] = m_Drone.transform.position;
+
+        var acceleration_x = positionError.normalized.x;
+        var acceleration_y = positionError.normalized.z;
+
+        Vector3 norm_acceleration = desiredAcceleration.normalized;
+        float posErr_len = Vector3.Distance(m_Drone.transform.position, targetPos);
+
+
+        var dampingFactor_x = 0.05f;
+        var dampingFactor_y = 0.05f;
+        if (my_rigidbody.velocity.x > 8)
+        {
+            dampingFactor_x = 0.4f;
+            if (my_rigidbody.velocity.z > 8)
+            {
+                dampingFactor_y = 0.4f;
+            }
+        }
+
+
+        float adjustedX = norm_acceleration.x - (dampingFactor_x * my_rigidbody.velocity.x);
+        float adjustedZ = norm_acceleration.z - (dampingFactor_y * my_rigidbody.velocity.z);
+
+        m_Drone.Move(adjustedX, adjustedZ);
+
+    }
+
+
+    public int targetIndex = 1;
+    private int targetIndex2 = 1;
+    private Vector3 targetPos;
+
+    public void FollowPointDrone2(int gateIndex)
+    {
+        GlobalVariables.CurrentCarPos[GlobalVariables.carIDMap[m_Drone.GetInstanceID()]] = m_Drone.transform.position;
+
+        if (targetIndex + 1 < path.Count)
+        {
+
+
+            float max_speed = m_Drone.max_speed;
+            float cur_speed = my_rigidbody.velocity.magnitude;
+
+            float adjustmentFactor = CalculateAdjustmentFactor(gateIndex); // Placeholder for adjustment calculation
+            max_speed *= adjustmentFactor; // Adjust max_speed based on the car's relative position
+
+
+            // get the world carPostion
+            Vector3 carPos_World = new Vector3(my_rigidbody.transform.position.x, 0f, my_rigidbody.transform.position.z);
+            Vector3 horizon = new Vector3(my_rigidbody.transform.right.x, 0, my_rigidbody.transform.right.z);
+            Vector3 vertical = new Vector3(my_rigidbody.transform.forward.x, 0, my_rigidbody.transform.forward.z);
+
+            // get the world targetPosition
+            Vector3 targetPos_local = path[targetIndex];
+
+            targetPos = obstacleMap.mapGrid.LocalToWorld(targetPos_local); //World Position
+
+            // get one node ahead and one node before
+
+            Vector3 Old_targetPos = obstacleMap.mapGrid.LocalToWorld(targetIndex - 1 >= 0 ? path[targetIndex - 1] : path[0]);
+
+            //path length and position error magnitute
+            float path_length = Vector3.Distance(targetPos, Old_targetPos);
+            float posErr_len = Vector3.Distance(carPos_World, targetPos);
+
+            // get the angle of each turning...
+            Vector3 BA = path[targetIndex] - path[targetIndex - 1];
+            Vector3 BC = path[targetIndex] - path[targetIndex + 1];
+
+            Vector3 A = path[targetIndex - 1];  // new angle calculation because points are not evenly spaced
+            Vector3 B = path[targetIndex];
+            Vector3 C = path[targetIndex + 1];
+
+            // Calculate vectors AB and BC
+            Vector3 AB1 = (B - A).normalized;
+            Vector3 BC1 = (C - B).normalized;
+
+            // Calculate the angle in degrees
+            float angle1 = Mathf.Acos(Vector3.Dot(AB1, BC1)) * Mathf.Rad2Deg;
+            float angle = Vector3.Angle(BA, BC);
+
+            Vector3 targetVelocity = new Vector3(0f, 0f, 0f);
+
+            if (path_length > 1f)
+            {
+                if (angle1 < 170f && posErr_len <= 8.5f)
+                {
+                    // Debug.Log("IN long path breaking");
+                    targetVelocity = Vector3.Normalize(targetPos - Old_targetPos) * 0f;
+                }
+                else
+                {
+                    // Debug.Log("IN long path acceling");
+                    targetVelocity = Vector3.Normalize(targetPos - Old_targetPos) * max_speed;
+                }
+                if (posErr_len < 2f)
+                {
+                    targetIndex++;
+                    targetPos = obstacleMap.mapGrid.LocalToWorld(path[targetIndex]);
+                    Old_targetPos = obstacleMap.mapGrid.LocalToWorld(targetIndex - 1 >= 0 ? path[targetIndex - 1] : path[0]);
+                    //targetVelocity = Vector3.Normalize(targetPos - Old_targetPos) * max_speed;
+                }
+            }
+            else
+            {
+                if (angle1 < 170f)
+                {
+                    // Debug.Log("IN short path breaking");
+                    targetVelocity = Vector3.Normalize(targetPos - Old_targetPos) * 4f;
+                }
+                else
+                {
+                    // Debug.Log("IN short path acceling");
+                    targetVelocity = Vector3.Normalize(targetPos - Old_targetPos) * max_speed;
+                }
+                if (posErr_len < 2f)
+                {
+                    targetIndex++;
+                    targetPos = obstacleMap.mapGrid.LocalToWorld(path[targetIndex]);
+                    Old_targetPos = obstacleMap.mapGrid.LocalToWorld(targetIndex - 1 >= 0 ? path[targetIndex - 1] : path[0]);
+                    //targetVelocity = Vector3.Normalize(targetPos - Old_targetPos) * max_speed;
+                }
+
+
+            }
+
+            Vector3 position_error = targetPos - carPos_World;
+            Vector3 velocity_error = targetVelocity - my_rigidbody.velocity;
+
+            Vector3 desired_acceleration;
+            float steering;
+            float acceleration;
+
+            if (angle1 < 170f && (posErr_len < 0.1 * path_length || (path_length < 15f && posErr_len > 0.5 * path_length)))
+            {
+                desired_acceleration = 1f * position_error + 1f * velocity_error;
+                steering = Vector3.Dot(desired_acceleration, horizon);
+                acceleration = Vector3.Dot(desired_acceleration, vertical);
+            }
+            else
+            {
+                if (position_error.magnitude > 15f)
+                {
+                    position_error = position_error.normalized * 15f;
+                }
+                //Debug.Log("pos error: " + position_error + " Velo error:" + velocity_error);
+                desired_acceleration = 1f * position_error + 1f * velocity_error;
+                steering = Vector3.Dot(desired_acceleration, horizon);
+                acceleration = Vector3.Dot(desired_acceleration, vertical);
+            }
+            // Apply the adjustment factor to both steering and acceleration
+steering *= adjustmentFactor;
+acceleration *= adjustmentFactor;
+
+// Clamp the adjusted values to ensure they remain within reasonable bounds
+acceleration = Mathf.Clamp(acceleration, -15f * adjustmentFactor, 15f * adjustmentFactor);
+steering = Mathf.Clamp(steering, -15f * adjustmentFactor, 15f * adjustmentFactor);
+
+            // Debug.Log("steering: " + steering + " acceleration: " + acceleration + " Velo:" +  my_rigidbody.velocity.magnitude);
+            // Debug.Log("VeloMag:" +  cur_speed + " Velo:" + my_rigidbody.velocity);
+
+            m_Drone.Move(steering, acceleration);
+
+            Debug.DrawLine(carPos_World, targetPos, Color.yellow);
+            Debug.DrawLine(targetPos, targetPos + targetVelocity, Color.red);
+            Debug.DrawLine(my_rigidbody.transform.position, my_rigidbody.transform.position + my_rigidbody.velocity, Color.white);
+            Debug.DrawLine(my_rigidbody.transform.position, my_rigidbody.transform.position + horizon * steering, Color.black);
+            Debug.DrawLine(my_rigidbody.transform.position, my_rigidbody.transform.position + vertical * acceleration, Color.magenta);
+
+        }
+        else
+        {
+            FollowPointDrone(path[path.Count - 1]);
+        }
+    }
+// Assuming alpha is a sensitivity factor that you might adjust
+private float alpha = 0.9f;
+
+// Calculates an adjustment factor based on the drone's distance to the next gate relative to the average distance of all drones
+float CalculateAdjustmentFactor(int gateIndex)
+{
+    // Get the current drone's ID and position
+    var carID = GlobalVariables.carIDMap[m_Drone.GetInstanceID()];
+    var currentDronePos = GlobalVariables.CurrentCarPos[carID];
+
+    // Calculate the current drone's distance to its next gate
+    var distanceToNextGate = Vector3.Distance(currentDronePos, GlobalVariables.gates[gateIndex][carID]);
+
+    // For demonstration, ensure GlobalVariables.DistancesToGate is properly managed to reflect current distances
+    // This step might involve recalculating and updating this list elsewhere in your code before calling this method
+
+    // Calculate the average distance of all drones to their respective next gates
+    var averageDistance = GlobalVariables.DistancesToGate.Average();
+
+    // Adjust the calculation to make the factor decrease as the drone gets closer to the gate
+    // This formula might need tweaking based on your game's specific mechanics and desired behavior
+    float adjustmentFactor = 1 + (alpha * (1 - (distanceToNextGate / averageDistance)));
+
+    // Clamping the factor to prevent extreme values
+    adjustmentFactor = Mathf.Clamp(adjustmentFactor, 0.5f, 2.0f); // Adjust these values as necessary
+
+    Debug.Log($"Adjustment Factor for Car {carID}: {adjustmentFactor}");
+
+    return adjustmentFactor;
+}
+
+    float CalculateAdjustmentFactorCar(int gate)
+    {
+        var carID = GlobalVariables.carIDMap[m_Car.GetInstanceID()];
+        var CurrentDronePos = GlobalVariables.CurrentCarPos[carID];
+
+
+        var averageDistance = 0f;
+        var distanceToNextGate = Vector3.Distance(m_Car.transform.position, GlobalVariables.gates[gate][carID]);
+        GlobalVariables.DistancesToGate.Add(distanceToNextGate);
+
+
+        Debug.Log("CurrentGate: " + gate);
+        Debug.Log(distanceToNextGate);
+
+
+        averageDistance = GlobalVariables.DistancesToGate.Average();
+
+
+
+        float adjustmentFactor = 1 - (alpha * (distanceToNextGate / averageDistance - 1));
+        adjustmentFactor = Mathf.Clamp(adjustmentFactor, 0.1f, 1.5f);
+        Debug.Log("Adjustment Factor" + adjustmentFactor + " CAR " + carID);
+
+
+        // Additional Coordination Logic Here
+        // Example: float distanceToNextGate = ...; // Calculate for each car
+        // Example: float averageDistanceToNextGate = ...; // Calculate average for all cars
+
+
+        // Implement logic here to determine how much to adjust speed.
+        // This could involve comparing the car's distance to its next gate against the group's average distance to their next gates,
+        // and returning a factor to multiply the max_speed by.
+        return adjustmentFactor; // Return 1.0f by default, meaning no adjustment
+    }
+}
+
+
+
+
