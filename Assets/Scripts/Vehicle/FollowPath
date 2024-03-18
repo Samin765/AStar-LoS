@@ -9,6 +9,15 @@ using System.Collections.Generic;
 using System;
 using Newtonsoft.Json;
 
+using Imported.StandardAssets.Vehicles.Car.Scripts;
+using Scripts.Map;
+using Scripts.Vehicle;
+using UnityEngine;
+using UnityEngine.Analytics;
+using System.Net.WebSockets;
+using System.Reflection;
+
+
 
 
 [RequireComponent(typeof(CarController))]
@@ -16,9 +25,15 @@ public class FollowPath
 {
     private CarController m_Car;
 
+    private DroneController m_Drone;
+
     private Rigidbody my_rigidbody;
 
     private List<Vector3> path;
+
+    private List<Vector3> my_path;
+
+    private List<Vector3> my_path2;
 
     private static ObstacleMapManager obstacleMapManager;
 
@@ -31,11 +46,13 @@ public class FollowPath
     private float k_p = 0.1f;
 
 
-    public FollowPath(CarController _car, Rigidbody _rigidBody, List<Vector3> _path, ObstacleMapManager _ObstacleMapManager)
+    public FollowPath(CarController _car, Rigidbody _rigidBody, List<Vector3> _path, List<Vector3> _path2, ObstacleMapManager _ObstacleMapManager)
     {
         this.my_rigidbody = _rigidBody;
         this.m_Car = _car;
         this.path = _path;
+        this.my_path = _path;
+        this.my_path2 = _path2;
         obstacleMapManager = _ObstacleMapManager;
         obstacleMap = obstacleMapManager.ObstacleMap;
 
@@ -45,10 +62,28 @@ public class FollowPath
         {
             Debug.LogError("CarController component not found on the GameObject.");
         }
+            drive = true;
 
     }
 
-        public FollowPath(CarController _car, Rigidbody _rigidBody, ObstacleMapManager _ObstacleMapManager)
+    public FollowPath(DroneController _drone, Rigidbody _rigidBody, List<Vector3> _path, ObstacleMapManager _ObstacleMapManager)
+    {
+        this.my_rigidbody = _rigidBody;
+        this.m_Drone = _drone;
+        this.path = _path;
+        obstacleMapManager = _ObstacleMapManager;
+        obstacleMap = obstacleMapManager.ObstacleMap;
+
+        this.old_target_pos = path[0];
+
+        if (m_Drone == null)
+        {
+            Debug.LogError("CarController component not found on the GameObject.");
+        }
+
+    }
+
+    public FollowPath(CarController _car, Rigidbody _rigidBody, ObstacleMapManager _ObstacleMapManager)
     {
         this.my_rigidbody = _rigidBody;
         this.m_Car = _car;
@@ -56,7 +91,7 @@ public class FollowPath
         obstacleMapManager = _ObstacleMapManager;
         obstacleMap = obstacleMapManager.ObstacleMap;
 
- 
+
 
         if (m_Car == null)
         {
@@ -66,15 +101,19 @@ public class FollowPath
     }
 
 
-    public Vector3Int test(){
+    public Vector3Int test()
+    {
         return obstacleMap.mapGrid.WorldToCell(Vector3.zero);
     }
 
-    public void newPath(List<Vector3> newPath){
+    public void newPath(List<Vector3> newPath)
+    {
         this.path = newPath;
     }
 
- public void Follow()
+
+
+    public void Follow()
     {
         if (path == null) return;
 
@@ -83,7 +122,7 @@ public class FollowPath
             Vector3 target_position;
             Vector3 target_position1;
             k_p = 30f;
-            k_d = 0.1f*k_p;
+            k_d = 0.1f * k_p;
 
             if (path.Count > 1)
             {
@@ -108,7 +147,7 @@ public class FollowPath
 
 
             float steering = Vector3.Dot(desired_acceleration, my_rigidbody.transform.right);
-            float acceleration = Vector3.Dot(desired_acceleration ,my_rigidbody.transform.forward);
+            float acceleration = Vector3.Dot(desired_acceleration, my_rigidbody.transform.forward);
 
             if (Mathf.Abs(Vector3.Distance(myLocalPosition, target_position)) < 0.5)
             {
@@ -119,3 +158,35 @@ public class FollowPath
         }
     }
 
+    public void FollowPoint(Vector3 targetPosition, int gate)
+    {
+        k_p = 0.2f;
+        k_d = 0.1f * k_p;
+        if (targetPosition == null)
+        {
+            Debug.LogError("Target position is null.");
+            return;
+        }
+
+        float adjustmenFactor = CalculateAdjustmentFactorCar(gate);
+
+        Vector3 myLocalPosition = obstacleMap.mapGrid.WorldToLocal(my_rigidbody.transform.position);
+
+        // Calculate desired velocity towards the target position
+        Vector3 targetVelocity = (targetPosition - myLocalPosition) / Time.fixedDeltaTime;
+
+        // Calculate position error and velocity error
+        Vector3 positionError = targetPosition - myLocalPosition;
+        Vector3 velocityError = targetVelocity - my_rigidbody.velocity;
+
+        // Calculate desired acceleration using proportional and derivative gains
+        Vector3 desiredAcceleration = k_p * positionError + k_d * velocityError;
+
+        // Calculate steering angle and acceleration
+        float steering = Vector3.Dot(desiredAcceleration, my_rigidbody.transform.right);
+        float acceleration = Vector3.Dot(desiredAcceleration, my_rigidbody.transform.forward) * adjustmenFactor;
+
+        // Move the car based on the calculated steering angle and acceleration
+        m_Car.Move(steering, acceleration, acceleration, 0f);
+        GlobalVariables.CurrentCarPos[GlobalVariables.carIDMap[m_Car.GetInstanceID()]] = m_Car.transform.position;
+    }
