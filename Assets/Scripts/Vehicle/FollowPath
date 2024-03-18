@@ -1,0 +1,75 @@
+using System.Linq;
+using Imported.StandardAssets.Vehicles.Car.Scripts;
+using Scripts.Game;
+using Scripts.Map;
+using UnityEngine;
+
+using System.Collections;
+using System.Collections.Generic;
+using System;
+using Newtonsoft.Json;
+
+
+
+[RequireComponent(typeof(CarController))]
+public class FollowPath
+{
+    private CarController m_Car;
+
+    private Rigidbody my_rigidbody;
+
+    private List<Vector3> path;
+
+    private static ObstacleMapManager obstacleMapManager;
+
+    private static ObstacleMap obstacleMap;
+
+    private Vector3 old_target_pos;
+    private Vector3 target_velocity;
+
+    private float k_d = 0.7f;
+    private float k_p = 0.1f;
+
+
+    public FollowPath(CarController _car, Rigidbody _rigidBody, List<Vector3> _path, ObstacleMapManager _ObstacleMapManager)
+    {
+        this.my_rigidbody = _rigidBody;
+        this.m_Car = _car;
+        this.path = _path;
+        obstacleMapManager = _ObstacleMapManager;
+        obstacleMap = obstacleMapManager.ObstacleMap;
+
+        this.old_target_pos = path[0];
+
+        if (m_Car == null)
+        {
+            Debug.LogError("CarController component not found on the GameObject.");
+        }
+
+    }
+
+        public FollowPath(CarController _car, Rigidbody _rigidBody, ObstacleMapManager _ObstacleMapManager)
+    {
+        this.my_rigidbody = _rigidBody;
+        this.m_Car = _car;
+
+        obstacleMapManager = _ObstacleMapManager;
+        obstacleMap = obstacleMapManager.ObstacleMap;
+
+ 
+
+        if (m_Car == null)
+        {
+            Debug.LogError("CarController component not found on the GameObject.");
+        }
+
+    }
+
+
+    public Vector3Int test(){
+        return obstacleMap.mapGrid.WorldToCell(Vector3.zero);
+    }
+
+    public void newPath(List<Vector3> newPath){
+        this.path = newPath;
+    }
